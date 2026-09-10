@@ -6,8 +6,11 @@ use std::str::FromStr;
 
 use crate::error::{TodoError, Result};
 use crate::models::project::{Project, CreateProjectInput, UpdateProjectInput, TaskCountsSummary};
-use crate::models::task::{Task, TaskStatus, CreateTaskInput, TaskQuery, TaskPage};
+use crate::models::task::{Task, TaskStatus, CreateTaskInput, TaskQuery, TaskPage, DailyActivity, ActivityItem};
 use crate::storage::schema;
+
+/// 日历每天最多附带多少条任务摘要（供格子内缩略展示 + 悬停提示）
+const CALENDAR_ITEMS_PER_DAY: usize = 4;
 
 pub struct Database {
     conn: Connection,
@@ -344,6 +347,24 @@ impl Database {
             }
         }
 
+        // 完成时间范围过滤。completed_at 可空，NULL 参与比较结果为 NULL，
+        // 因此按完成时间筛选时会自然排除掉尚未完成的任务。
+        if let Some(from) = query.completed_from {
+            if !from.is_empty() {
+                let cond = format!(" AND completed_at >= '{}'", from.replace('\'', "''"));
+                sql.push_str(&cond);
+                count_sql.push_str(&cond);
+            }
+        }
+
+        if let Some(to) = query.completed_to {
+            if !to.is_empty() {
+                let cond = format!(" AND completed_at <= '{}'", to.replace('\'', "''"));
+                sql.push_str(&cond);
+                count_sql.push_str(&cond);
+            }
+        }
+
         sql.push_str(" ORDER BY CASE WHEN status = 'completed' THEN 1 ELSE 0 END ASC, priority DESC, sort_order ASC, created_at DESC");
 
         let page = query.page.unwrap_or(1).max(1);
@@ -398,5 +419,82 @@ impl Database {
             projects,
             completed,
         })
+    }
+
+    /// 日历视图数据：按**本地时区**的自然日聚合。
+    ///
+    /// 一次算出「当天完成数 / 当天创建数 / 当天完成任务的耗时合计」，
+    /// 并附带每天的若干条任务摘要供日历格内缩略展示 —— 因此前端切换统计口径
+    /// 或渲染格子内容都无需再次请求。
+    ///
+    /// `from` / `to` 为本地日期字符串（`YYYY-MM-DD`，闭区间）。
+    /// 日期换算交给 SQLite 的 `localtime` 修饰符，避免在应用层重复处理时区——
+    /// `completed_at` / `created_at` 存的是 UTC（`+00:00`），直接按字符串截取日期会跨零点分错天。
+    pub fn get_daily_activity(&self, from: &str, to: &str) -> Result<Vec<DailyActivity>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT d, kind, title, project_id, minutes FROM (
+                 SELECT date(completed_at, 'localtime') AS d,
+                        'completed' AS kind,
+                        title,
+                        project_id,
+                        completed_at AS ts,
+                        COALESCE(time_spent, 0) AS minutes
+                 FROM tasks
+                 WHERE deleted_at IS NULL
+                   AND completed_at IS NOT NULL
+                   AND date(completed_at, 'localtime') BETWEEN ?1 AND ?2
+                 UNION ALL
+                 SELECT date(created_at, 'localtime') AS d,
+                        'created' AS kind,
+                        title,
+                        project_id,
+                        created_at AS ts,
+                        0 AS minutes
+                 FROM tasks
+                 WHERE deleted_at IS NULL
+                   AND date(created_at, 'localtime') BETWEEN ?1 AND ?2
+             )
+             ORDER BY d ASC, ts ASC",
+        )?;
+
+        let rows = stmt.query_map(params![from, to], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, i64>(4)?,
+            ))
+        })?;
+
+        // BTreeMap 保证返回结果按日期升序
+        let mut map: std::collections::BTreeMap<String, DailyActivity> = std::collections::BTreeMap::new();
+
+        for row in rows {
+            let (date, kind, title, project_id, minutes) = row?;
+            let entry = map.entry(date.clone()).or_insert_with(|| DailyActivity {
+                date,
+                completed_count: 0,
+                created_count: 0,
+                completed_minutes: 0,
+                completed_items: Vec::new(),
+                created_items: Vec::new(),
+            });
+
+            if kind == "completed" {
+                entry.completed_count += 1;
+                entry.completed_minutes += minutes;
+                if entry.completed_items.len() < CALENDAR_ITEMS_PER_DAY {
+                    entry.completed_items.push(ActivityItem { title, project_id });
+                }
+            } else {
+                entry.created_count += 1;
+                if entry.created_items.len() < CALENDAR_ITEMS_PER_DAY {
+                    entry.created_items.push(ActivityItem { title, project_id });
+                }
+            }
+        }
+
+        Ok(map.into_values().collect())
     }
 }

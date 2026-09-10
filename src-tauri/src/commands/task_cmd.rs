@@ -1,7 +1,7 @@
 use tauri::State;
 use crate::AppState;
 use crate::commands::CommandResult;
-use todo_core::{Task, CreateTaskInput, TaskQuery, TaskStatus};
+use todo_core::{Task, CreateTaskInput, TaskQuery, TaskStatus, DailyActivity};
 use std::str::FromStr;
 
 #[tauri::command]
@@ -59,5 +59,13 @@ pub fn delete_task(state: State<AppState>, task_id: String) -> CommandResult<Tas
 pub fn restore_task(state: State<AppState>, task_id: String) -> CommandResult<Task> {
     let db = state.db.lock().unwrap();
     let res = db.restore_task(&task_id)?;
+    Ok(res)
+}
+
+/// 日历视图：取 [from, to]（本地日期 YYYY-MM-DD，闭区间）内每天的活跃度汇总
+#[tauri::command]
+pub fn get_daily_activity(state: State<AppState>, from: String, to: String) -> CommandResult<Vec<DailyActivity>> {
+    let db = state.db.lock().unwrap();
+    let res = db.get_daily_activity(&from, &to)?;
     Ok(res)
 }

@@ -90,5 +90,18 @@ pub fn migrate(conn: &mut Connection) -> Result<()> {
         tx.commit()?;
     }
 
+    if version < 4 {
+        // 日历视图按完成时间做范围查询与按天聚合，需要独立索引
+        let tx = conn.transaction()?;
+        tx.execute_batch(
+            "
+            CREATE INDEX IF NOT EXISTS idx_tasks_completed_at
+            ON tasks(completed_at) WHERE deleted_at IS NULL;
+            INSERT INTO schema_migrations (version) VALUES (4);
+            "
+        )?;
+        tx.commit()?;
+    }
+
     Ok(())
 }

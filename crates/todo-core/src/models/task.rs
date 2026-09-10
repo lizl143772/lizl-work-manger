@@ -74,8 +74,36 @@ pub struct TaskQuery {
     pub created_from: Option<String>,
     /// 创建时间上界（RFC3339，含）
     pub created_to: Option<String>,
+    /// 完成时间下界（RFC3339，含）
+    pub completed_from: Option<String>,
+    /// 完成时间上界（RFC3339，含）
+    pub completed_to: Option<String>,
     pub page: Option<u32>,
     pub page_size: Option<u32>,
+}
+
+/// 日历格内缩略展示用的一条任务摘要（不含正文与附件）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActivityItem {
+    pub title: String,
+    pub project_id: String,
+}
+
+/// 日历用：某一天的活跃度汇总（按本地时区的自然日聚合）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DailyActivity {
+    /// 本地日期，格式 YYYY-MM-DD
+    pub date: String,
+    /// 当天完成的任务数
+    pub completed_count: u64,
+    /// 当天创建的任务数
+    pub created_count: u64,
+    /// 当天完成任务的耗时合计（分钟）
+    pub completed_minutes: i64,
+    /// 当天完成的任务（按完成时间正序，最多若干条）
+    pub completed_items: Vec<ActivityItem>,
+    /// 当天创建的任务（按创建时间正序，最多若干条）
+    pub created_items: Vec<ActivityItem>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
