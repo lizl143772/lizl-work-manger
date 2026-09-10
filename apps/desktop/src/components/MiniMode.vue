@@ -1,11 +1,14 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { api } from '../lib/api';
 import { useProjectStore } from '../stores/projectStore';
+import { useTaskStore } from '../stores/taskStore';
+import { dateRangeToFrom } from '../types/task';
 import type { Task } from '../types/task';
 import { Circle, PlayCircle, Inbox, Calendar } from 'lucide-vue-next';
 
 const projectStore = useProjectStore();
+const taskStore = useTaskStore();
 
 const tasks = ref<Task[]>([]);
 const loading = ref(true);
@@ -14,7 +17,12 @@ const activeTab = ref<'in_progress' | 'todo'>('in_progress');
 const load = async () => {
   loading.value = true;
   try {
-    const res = await api.listTasks({ statuses: ['todo', 'in_progress'], page: 1, page_size: 200 });
+    const res = await api.listTasks({
+      statuses: ['todo', 'in_progress'],
+      created_from: dateRangeToFrom(taskStore.dateRange),
+      page: 1,
+      page_size: 200
+    });
     tasks.value = res.items;
   } catch {
     // keep previous list on error
@@ -24,6 +32,9 @@ const load = async () => {
 };
 
 onMounted(load);
+
+// 标题栏的时间范围变化时同步刷新
+watch(() => taskStore.dateRange, load);
 
 const inProgressCount = computed(() => tasks.value.filter(t => t.status === 'in_progress').length);
 const todoCount = computed(() => tasks.value.filter(t => t.status === 'todo').length);

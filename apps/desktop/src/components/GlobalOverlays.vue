@@ -71,7 +71,7 @@ const cancelModal = () => {
 
     <!-- Global Modals (Dialog) -->
     <Transition name="fade">
-      <div v-if="uiStore.modal" class="fixed inset-0 z-[90] flex items-center justify-center p-4">
+      <div v-if="uiStore.modal" class="fixed inset-0 z-[90] flex items-center justify-center p-4" data-no-collapse>
         <!-- Backdrop -->
         <div class="absolute inset-0 bg-slate-900/20 backdrop-blur-sm" @click="cancelModal"></div>
         
@@ -119,7 +119,7 @@ const cancelModal = () => {
 
     <!-- Global Image Preview -->
     <Transition name="fade">
-      <div v-if="uiStore.isPreviewOpen" class="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/70 backdrop-blur-md" tabindex="0" @keydown.esc="uiStore.closePreview" @keydown.left="uiStore.prevPreview" @keydown.right="uiStore.nextPreview" ref="previewContainer">
+      <div v-if="uiStore.isPreviewOpen" class="fixed inset-0 z-[110] flex items-center justify-center bg-slate-900/70 backdrop-blur-md" data-no-collapse tabindex="0" @keydown.esc="uiStore.closePreview" @keydown.left="uiStore.prevPreview" @keydown.right="uiStore.nextPreview" ref="previewContainer">
         
         <!-- Close Button -->
         <button @click="uiStore.closePreview" class="absolute top-6 right-6 p-2 rounded-full bg-white/10 text-white/70 hover:text-white hover:bg-white/20 transition-colors z-[111]">

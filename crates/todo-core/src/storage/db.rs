@@ -327,6 +327,23 @@ impl Database {
             }
         }
 
+        // 创建时间范围过滤（RFC3339 字符串可直接做字典序比较）
+        if let Some(from) = query.created_from {
+            if !from.is_empty() {
+                let cond = format!(" AND created_at >= '{}'", from.replace('\'', "''"));
+                sql.push_str(&cond);
+                count_sql.push_str(&cond);
+            }
+        }
+
+        if let Some(to) = query.created_to {
+            if !to.is_empty() {
+                let cond = format!(" AND created_at <= '{}'", to.replace('\'', "''"));
+                sql.push_str(&cond);
+                count_sql.push_str(&cond);
+            }
+        }
+
         sql.push_str(" ORDER BY CASE WHEN status = 'completed' THEN 1 ELSE 0 END ASC, priority DESC, sort_order ASC, created_at DESC");
 
         let page = query.page.unwrap_or(1).max(1);

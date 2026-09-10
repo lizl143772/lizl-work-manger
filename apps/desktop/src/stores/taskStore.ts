@@ -1,8 +1,16 @@
 import { defineStore } from 'pinia';
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { api } from '../lib/api';
-import type { Task, TaskStatus } from '../types/task';
+import type { Task, TaskStatus, DateRangeKey } from '../types/task';
+import { DATE_RANGE_OPTIONS, DEFAULT_DATE_RANGE, dateRangeToFrom } from '../types/task';
 import { useProjectStore } from './projectStore';
+
+const DATE_RANGE_STORAGE_KEY = 'workmanager.dateRange';
+
+function readStoredDateRange(): DateRangeKey {
+  const raw = localStorage.getItem(DATE_RANGE_STORAGE_KEY) as DateRangeKey | null;
+  return raw && DATE_RANGE_OPTIONS.some(o => o.key === raw) ? raw : DEFAULT_DATE_RANGE;
+}
 
 export const useTaskStore = defineStore('task', () => {
   const tasks = ref<Task[]>([]);
@@ -11,14 +19,28 @@ export const useTaskStore = defineStore('task', () => {
   const undoTimeout = ref<number | null>(null);
   const lastDeletedTask = ref<Task | null>(null);
   const expandedTaskId = ref<string | null>(null);
+  // 时间范围筛选，默认近半年
+  const dateRange = ref<DateRangeKey>(readStoredDateRange());
 
   const projectStore = useProjectStore();
+
+  /** 当前时间范围的展示文案 */
+  const currentDateRangeLabel = computed(
+    () => DATE_RANGE_OPTIONS.find(o => o.key === dateRange.value)?.label ?? '近半年'
+  );
 
   function toggleExpanded(id: string) {
     if (expandedTaskId.value === id) {
       expandedTaskId.value = null;
     } else {
       expandedTaskId.value = id;
+    }
+  }
+
+  /** 收起当前展开（选中）的任务卡片 */
+  function collapseExpanded() {
+    if (expandedTaskId.value !== null) {
+      expandedTaskId.value = null;
     }
   }
 
@@ -31,6 +53,7 @@ export const useTaskStore = defineStore('task', () => {
       const query = {
         project_id: isInboxView ? undefined : projectStore.currentViewActualId,
         statuses: isCompletedView ? ['completed' as TaskStatus] : ['todo' as TaskStatus, 'in_progress' as TaskStatus],
+        created_from: dateRangeToFrom(dateRange.value),
         page: 1,
         page_size: 100
       };
@@ -41,6 +64,14 @@ export const useTaskStore = defineStore('task', () => {
     } finally {
       loading.value = false;
     }
+  }
+
+  /** 设置时间范围并重新加载任务 */
+  async function setDateRange(key: DateRangeKey) {
+    if (dateRange.value === key) return;
+    dateRange.value = key;
+    localStorage.setItem(DATE_RANGE_STORAGE_KEY, key);
+    await loadTasks();
   }
 
   async function quickAdd(title: string, attachments?: string | null) {
@@ -142,6 +173,9 @@ export const useTaskStore = defineStore('task', () => {
     loading,
     error,
     lastDeletedTask,
+    dateRange,
+    currentDateRangeLabel,
+    setDateRange,
     loadTasks,
     quickAdd,
     updateStatus,
@@ -151,6 +185,7 @@ export const useTaskStore = defineStore('task', () => {
     removeTask,
     undoDelete,
     expandedTaskId,
-    toggleExpanded
+    toggleExpanded,
+    collapseExpanded
   };
 });

@@ -70,6 +70,10 @@ pub struct CreateTaskInput {
 pub struct TaskQuery {
     pub project_id: Option<String>,
     pub statuses: Option<Vec<TaskStatus>>,
+    /// 创建时间下界（RFC3339，含）
+    pub created_from: Option<String>,
+    /// 创建时间上界（RFC3339，含）
+    pub created_to: Option<String>,
     pub page: Option<u32>,
     pub page_size: Option<u32>,
 }

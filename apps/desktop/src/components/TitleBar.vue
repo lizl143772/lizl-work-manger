@@ -2,6 +2,7 @@
 import { ref, onMounted } from 'vue';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useUiStore } from '../stores/uiStore';
+import DateRangePicker from './DateRangePicker.vue';
 import { CheckCircle, Pin, PinOff, Minimize2, Maximize2, Minus, Square, Copy, X } from 'lucide-vue-next';
 
 const uiStore = useUiStore();
@@ -42,16 +43,18 @@ const closeWindow = async () => {
 
 <template>
   <div
-    class="h-10 flex items-center justify-between bg-white border-b border-slate-100 select-none flex-shrink-0"
+    class="relative z-40 h-10 flex items-center justify-between bg-white border-b border-slate-100 select-none flex-shrink-0"
     @mousedown="startDrag"
     @dblclick="toggleMaximize"
   >
-    <!-- Brand -->
+    <!-- Brand + 全局时间范围 -->
     <div class="flex items-center px-3 space-x-2">
       <div class="w-5 h-5 bg-blue-600 rounded-md flex items-center justify-center">
         <CheckCircle class="w-3.5 h-3.5 text-white" />
       </div>
       <span class="text-xs font-bold text-slate-700 tracking-tight">lizl 待办管理</span>
+      <div class="w-px h-3.5 bg-slate-200"></div>
+      <DateRangePicker />
     </div>
 
     <!-- Window Actions -->

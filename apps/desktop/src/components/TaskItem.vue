@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, nextTick } from 'vue';
+import { ref, computed, watch, nextTick, onBeforeUnmount } from 'vue';
 import type { Task, TaskStatus } from '../types/task';
 import { useTaskStore } from '../stores/taskStore';
 import { useUiStore } from '../stores/uiStore';
@@ -69,7 +69,23 @@ const toggleStatus = () => {
   taskStore.updateStatus(props.task.id, next);
 };
 
+/**
+ * 是否存在未保存的改动。
+ * 收起卡片（切换任务、点击外部）时也会触发保存，若无改动则直接跳过，
+ * 避免无谓的 IPC 调用和整列表重渲染 —— 这是切换任务卡顿的主要来源之一。
+ */
+const isDirty = computed(() => {
+  const t = editTitle.value.trim();
+  if (!t) return false;
+  return t !== props.task.title
+    || (editDesc.value.trim() || null) !== (props.task.description || null)
+    || editDueDate.value !== formatTimeInput(props.task.due_date)
+    || editCompletedAt.value !== formatTimeInput(props.task.completed_at)
+    || (autoTimeSpent.value || 0) !== (props.task.time_spent || 0);
+});
+
 const saveDetails = async () => {
+  if (!isDirty.value) return;
   const t = editTitle.value.trim();
   if (t) {
     await taskStore.updateDetails(props.task.id, {
@@ -207,6 +223,9 @@ watch(isExpanded, async (val) => {
     editDesc.value = props.task.description || '';
     
     await nextTick();
+    // 等待渲染期间可能已被收起（快速连续切换任务），此时不再创建编辑器，
+    // 否则实例会挂在已卸载的容器上造成泄漏
+    if (!isExpanded.value) return;
     if (vditorContainer.value && !vditorInstance) {
       vditorInstance = new Vditor(vditorContainer.value, {
         mode: 'ir',
@@ -241,6 +260,16 @@ watch(isExpanded, async (val) => {
       vditorInstance.destroy();
       vditorInstance = null;
     }
+  }
+});
+
+onBeforeUnmount(() => {
+  // 卸载前保存未落库的编辑内容，并销毁编辑器实例，避免残留
+  saveDetails();
+  if (vditorInstance) {
+    vditorContainer.value?.removeEventListener('keydown', handleVditorKeydown, true);
+    vditorInstance.destroy();
+    vditorInstance = null;
   }
 });
 
@@ -379,6 +408,7 @@ const deleteFromMenu = () => {
   <div 
     class="group relative flex flex-col px-4 py-3 mx-6 mb-3 bg-white rounded-xl border shadow-[0_1px_2px_rgba(0,0,0,0.02)] hover:shadow-sm transition-all duration-200 cursor-pointer"
     :class="cardBorderClass"
+    :data-task-item="task.id"
     @click="toggleExpand"
     @contextmenu.prevent="onContextMenu"
     @paste="onPaste"
@@ -502,7 +532,7 @@ const deleteFromMenu = () => {
     <!-- Time Setting Modal (Local to TaskItem) -->
     <Teleport to="body">
       <Transition name="fade">
-        <div v-if="showTimeModal" class="fixed inset-0 z-[120] flex items-center justify-center p-4">
+        <div v-if="showTimeModal" class="fixed inset-0 z-[120] flex items-center justify-center p-4" data-no-collapse>
           <div class="absolute inset-0 bg-slate-900/30 backdrop-blur-sm" @click="showTimeModal = false"></div>
           
           <div class="relative bg-white rounded-xl shadow-2xl border border-slate-100 w-full max-w-sm overflow-hidden p-6" @click.stop>
@@ -537,7 +567,7 @@ const deleteFromMenu = () => {
 
     <!-- Context Menu -->
     <Teleport to="body">
-      <div v-if="contextMenu.show" class="fixed inset-0 z-[130]" @click="closeContextMenu" @contextmenu.prevent="closeContextMenu">
+      <div v-if="contextMenu.show" class="fixed inset-0 z-[130]" data-no-collapse @click="closeContextMenu" @contextmenu.prevent="closeContextMenu">
         <div 
           class="absolute w-44 bg-white rounded-xl shadow-xl border border-slate-100 py-1.5 overflow-hidden"
           :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"

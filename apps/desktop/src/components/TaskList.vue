@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
+import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
 import { useTaskStore } from '../stores/taskStore';
 import { useProjectStore } from '../stores/projectStore';
 import TaskItem from './TaskItem.vue';
@@ -9,6 +9,7 @@ const taskStore = useTaskStore();
 const projectStore = useProjectStore();
 
 const isCompletedView = computed(() => projectStore.currentViewId === 'completed');
+const isFilteredByTime = computed(() => taskStore.dateRange !== 'all');
 
 type StatusTab = 'all' | 'todo' | 'in_progress';
 const activeTab = ref<StatusTab>('all');
@@ -27,6 +28,27 @@ const filteredTasks = computed(() => {
   if (activeTab.value === 'in_progress') return taskStore.tasks.filter(t => t.status === 'in_progress');
   return taskStore.tasks;
 });
+
+/**
+ * 点击「当前展开的那张卡片」以外的任何区域，都收起当前展开的卡片。
+ * 采用捕获阶段监听：内部元素即使写了 stopPropagation 也拦不住，
+ * 保证列表空白、其他卡片、侧边栏、标题栏等任意位置点击都能收起。
+ */
+function onGlobalPointerDown(e: MouseEvent) {
+  const openId = taskStore.expandedTaskId;
+  if (!openId) return;
+  const target = e.target as Element | null;
+  if (!target || typeof target.closest !== 'function') return;
+  // 浮层（时间规划弹窗、右键菜单、图片预览、全局弹窗）内点击不收起
+  if (target.closest('[data-no-collapse]')) return;
+  // 点击任意任务卡片：交给卡片自身的展开/切换逻辑，
+  // 直接 A → B 一次切换，避免先收起（null）再展开造成的高度二次跳变
+  if (target.closest('[data-task-item]')) return;
+  taskStore.collapseExpanded();
+}
+
+onMounted(() => document.addEventListener('mousedown', onGlobalPointerDown, true));
+onBeforeUnmount(() => document.removeEventListener('mousedown', onGlobalPointerDown, true));
 </script>
 
 <template>
@@ -86,8 +108,19 @@ const filteredTasks = computed(() => {
       <div class="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mb-6">
         <Inbox class="w-10 h-10 text-slate-300" />
       </div>
-      <p class="text-[15px] font-medium text-slate-500">没有待办任务</p>
-      <p class="text-sm text-slate-400 mt-1">享受片刻宁静，或添加新任务</p>
+      <p class="text-[15px] font-medium text-slate-500">
+        {{ isFilteredByTime ? `${taskStore.currentDateRangeLabel}没有任务` : '没有待办任务' }}
+      </p>
+      <p class="text-sm text-slate-400 mt-1">
+        {{ isFilteredByTime ? '可切换时间范围查看更早的任务' : '享受片刻宁静，或添加新任务' }}
+      </p>
+      <button
+        v-if="isFilteredByTime"
+        @click="taskStore.setDateRange('all')"
+        class="mt-5 px-4 py-1.5 text-[13px] font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-full transition-colors"
+      >
+        查看全部时间
+      </button>
     </div>
     
     <!-- List -->
@@ -119,10 +152,14 @@ const filteredTasks = computed(() => {
 }
 
 /* List Item Animations */
-.list-move,
+/* 只过渡位移并缩短时长：展开/收起会让卡片高度突变，
+   过长的 all 过渡会让下方卡片"追不上"展开动作，产生粘滞感 */
+.list-move {
+  transition: transform 0.15s cubic-bezier(0.4, 0, 0.2, 1);
+}
 .list-enter-active,
 .list-leave-active {
-  transition: all 0.3s ease;
+  transition: opacity 0.15s ease, transform 0.15s ease;
 }
 .list-enter-from {
   opacity: 0;
