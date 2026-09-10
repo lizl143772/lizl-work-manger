@@ -3,12 +3,46 @@ import { ref, watch, nextTick } from 'vue';
 import { useProjectStore } from '../stores/projectStore';
 import { useTaskStore } from '../stores/taskStore';
 import { useUiStore } from '../stores/uiStore';
-import { Inbox, Briefcase, User, CheckCircle, Plus, Trash2, Hash, Book, Star, Home, Code, Coffee, ShoppingCart, Check, Pencil } from 'lucide-vue-next';
+import { Inbox, Briefcase, User, CheckCircle, Plus, Trash2, Hash, Book, Star, Home, Code, Coffee, ShoppingCart, Check, Pencil, CalendarDays, LayoutGrid, BarChart3, Settings } from 'lucide-vue-next';
 import type { Project } from '../types/task';
 
 const projectStore = useProjectStore();
 const taskStore = useTaskStore();
 const uiStore = useUiStore();
+
+// 底部 Tab：常用（系统视图 + 项目）/ 菜单（其他功能入口）
+const SIDEBAR_TAB_KEY = 'workmanager.sidebarTab';
+type SidebarTab = 'common' | 'menu';
+
+const activeTab = ref<SidebarTab>(
+  localStorage.getItem(SIDEBAR_TAB_KEY) === 'menu' ? 'menu' : 'common'
+);
+
+const sidebarTabs = [
+  { id: 'common' as SidebarTab, label: '常用', icon: Star },
+  { id: 'menu' as SidebarTab, label: '菜单', icon: LayoutGrid },
+];
+
+const setTab = (tab: SidebarTab) => {
+  activeTab.value = tab;
+  localStorage.setItem(SIDEBAR_TAB_KEY, tab);
+};
+
+/** 菜单页的功能项；未实现的先以禁用态占位 */
+const menuItems = [
+  { id: 'calendar', name: '日历', icon: CalendarDays, available: true },
+  { id: 'trash', name: '回收站', icon: Trash2, available: false },
+  { id: 'stats', name: '统计', icon: BarChart3, available: false },
+  { id: 'settings', name: '设置', icon: Settings, available: false },
+];
+
+const selectMenuItem = (item: { id: string; name: string; available: boolean }) => {
+  if (!item.available) {
+    uiStore.showMessage(`「${item.name}」还在开发中`, 'info');
+    return;
+  }
+  selectProject(item.id);
+};
 
 const getIcon = (iconName: string) => {
   switch (iconName) {
@@ -123,7 +157,10 @@ const confirmDelete = async (id: string) => {
   <div class="w-64 h-full flex flex-col bg-transparent">
     
     <div class="flex-1 overflow-y-auto px-4 py-4 pt-6 space-y-8 custom-scrollbar">
-      
+
+      <!-- 常用页：系统视图 + 我的项目 -->
+      <template v-if="activeTab === 'common'">
+
       <!-- System Views -->
       <div class="space-y-1.5">
         <button 
@@ -197,7 +234,57 @@ const confirmDelete = async (id: string) => {
           </div>
         </div>
       </div>
-      
+
+      </template>
+
+      <!-- 菜单页：其他功能入口 -->
+      <template v-else>
+        <div>
+          <div class="px-3 mb-3">
+            <span class="text-xs font-bold text-slate-400 uppercase tracking-widest">功能</span>
+          </div>
+
+          <div class="space-y-1">
+            <button
+              v-for="item in menuItems"
+              :key="item.id"
+              @click="selectMenuItem(item)"
+              :title="item.available ? item.name : `${item.name}（开发中）`"
+              :class="['w-full flex items-center px-3 py-2.5 rounded-xl text-[14px] transition-all duration-200 group',
+                       !item.available
+                         ? 'text-slate-400 cursor-default'
+                         : projectStore.currentViewId === item.id
+                           ? 'bg-white text-blue-600 shadow-sm font-semibold'
+                           : 'text-slate-600 hover:bg-slate-200/50 hover:text-slate-900']"
+            >
+              <component
+                :is="item.icon"
+                class="w-4 h-4 mr-3"
+                :class="projectStore.currentViewId === item.id && item.available ? 'text-blue-600' : 'text-slate-400'"
+              />
+              <span class="flex-1 text-left">{{ item.name }}</span>
+              <span v-if="!item.available" class="text-[10px] px-1.5 py-0.5 rounded-md bg-slate-200/70 text-slate-400">开发中</span>
+            </button>
+          </div>
+        </div>
+      </template>
+
+    </div>
+
+    <!-- 底部 Tab：常用 / 菜单 -->
+    <div class="px-4 pt-2 pb-3 border-t border-slate-200/60">
+      <div class="flex items-center bg-slate-200/60 rounded-xl p-0.5">
+        <button
+          v-for="tab in sidebarTabs"
+          :key="tab.id"
+          @click="setTab(tab.id)"
+          :class="['flex-1 flex items-center justify-center space-x-1.5 py-1.5 rounded-lg text-xs font-medium transition-all duration-200',
+                   activeTab === tab.id ? 'bg-white text-slate-800 shadow-sm' : 'text-slate-500 hover:text-slate-700']"
+        >
+          <component :is="tab.icon" class="w-3.5 h-3.5" />
+          <span>{{ tab.label }}</span>
+        </button>
+      </div>
     </div>
 
     <!-- Project Dialog (Create / Edit) -->

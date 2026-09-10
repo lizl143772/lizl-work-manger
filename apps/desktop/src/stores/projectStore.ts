@@ -6,14 +6,18 @@ import type { Project, TaskCountsSummary } from '../types/task';
 export const useProjectStore = defineStore('project', () => {
   const projects = ref<Project[]>([]);
   const counts = ref<TaskCountsSummary>({ inbox: 0, projects: {}, completed: 0 });
-  const currentViewId = ref<string>('inbox'); // 'inbox', 'completed', or project_id
+  // 'inbox' | 'completed' | 'calendar' | project_id
+  const currentViewId = ref<string>('inbox');
 
   const activeProjects = computed(() => projects.value.filter(p => !p.is_archived));
   const defaultProject = computed(() => projects.value.find(p => p.is_default));
-  
+
+  const isCalendarView = computed(() => currentViewId.value === 'calendar');
+
   const currentViewName = computed(() => {
     if (currentViewId.value === 'inbox') return '待办列表';
     if (currentViewId.value === 'completed') return '已完成';
+    if (currentViewId.value === 'calendar') return '日历';
     const proj = projects.value.find(p => p.id === currentViewId.value);
     return proj ? proj.name : '未知';
   });
@@ -21,6 +25,7 @@ export const useProjectStore = defineStore('project', () => {
   const currentViewActualId = computed(() => {
     if (currentViewId.value === 'inbox') return defaultProject.value?.id;
     if (currentViewId.value === 'completed') return undefined;
+    if (currentViewId.value === 'calendar') return undefined;
     return currentViewId.value;
   });
 
@@ -60,6 +65,7 @@ export const useProjectStore = defineStore('project', () => {
     currentViewId,
     activeProjects,
     defaultProject,
+    isCalendarView,
     currentViewName,
     currentViewActualId,
     loadProjects,

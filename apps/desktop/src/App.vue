@@ -8,8 +8,9 @@ import Sidebar from './components/Sidebar.vue';
 import QuickInput from './components/QuickInput.vue';
 import TaskList from './components/TaskList.vue';
 import MiniMode from './components/MiniMode.vue';
+import CalendarView from './components/CalendarView.vue';
 import GlobalOverlays from './components/GlobalOverlays.vue';
-import { CheckCircle2, ListTodo } from 'lucide-vue-next';
+import { CheckCircle2, ListTodo, CalendarDays } from 'lucide-vue-next';
 
 const projectStore = useProjectStore();
 const taskStore = useTaskStore();
@@ -42,19 +43,25 @@ onMounted(async () => {
           <div class="flex items-center space-x-3">
             <div class="w-8 h-8 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center">
               <CheckCircle2 v-if="projectStore.currentViewId === 'completed'" class="w-5 h-5" />
+              <CalendarDays v-else-if="projectStore.isCalendarView" class="w-5 h-5" />
               <ListTodo v-else class="w-5 h-5" />
             </div>
             <h1 class="text-2xl font-bold tracking-tight text-slate-800">{{ projectStore.currentViewName }}</h1>
           </div>
         </header>
 
+        <!-- Calendar View -->
+        <main v-if="projectStore.isCalendarView" class="flex-1 overflow-hidden flex flex-col bg-slate-50/30">
+          <CalendarView />
+        </main>
+
         <!-- Task List Area -->
-        <main class="flex-1 overflow-hidden flex flex-col bg-slate-50/30">
+        <main v-else class="flex-1 overflow-hidden flex flex-col bg-slate-50/30">
           <TaskList />
         </main>
 
-        <!-- Quick Input Anchored at Bottom -->
-        <div v-if="projectStore.currentViewId !== 'completed'" class="px-8 pt-2 pb-6 bg-white border-t border-slate-50 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.02)] z-10">
+        <!-- Quick Input Anchored at Bottom（日历视图不需要快速录入） -->
+        <div v-if="!projectStore.isCalendarView && projectStore.currentViewId !== 'completed'" class="px-8 pt-2 pb-6 bg-white border-t border-slate-50 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.02)] z-10">
           <QuickInput />
         </div>
       </div>

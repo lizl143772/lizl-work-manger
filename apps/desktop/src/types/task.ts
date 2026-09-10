@@ -65,8 +65,61 @@ export interface TaskQuery {
   created_from?: string;
   /** 创建时间上界（ISO 8601，含） */
   created_to?: string;
+  /** 完成时间下界（ISO 8601，含） */
+  completed_from?: string;
+  /** 完成时间上界（ISO 8601，含） */
+  completed_to?: string;
   page?: number;
   page_size?: number;
+}
+
+/** 日历格内缩略展示用的一条任务摘要（不含正文与附件） */
+export interface ActivityItem {
+  title: string;
+  project_id: string;
+}
+
+/** 日历用：某一天的活跃度汇总（后端按本地时区的自然日聚合） */
+export interface DailyActivity {
+  /** 本地日期，格式 YYYY-MM-DD */
+  date: string;
+  /** 当天完成的任务数 */
+  completed_count: number;
+  /** 当天创建的任务数 */
+  created_count: number;
+  /** 当天完成任务的耗时合计（分钟） */
+  completed_minutes: number;
+  /** 当天完成的任务（按完成时间正序，后端截断到若干条） */
+  completed_items: ActivityItem[];
+  /** 当天创建的任务（按创建时间正序，后端截断到若干条） */
+  created_items: ActivityItem[];
+}
+
+/**
+ * 把本地日期（YYYY-MM-DD）换算成一对可直接做字典序比较的 RFC3339 边界。
+ *
+ * 后端 `completed_at` / `created_at` 存的是 UTC，且 chrono 的 `to_rfc3339()`
+ * 仅在纳秒非零时才带小数部分，所以边界要分别处理：
+ * - 下界用不带小数的秒级格式 —— 小数点的字符编码大于加号，因此
+ *   当天零点整点完成的任务不会被漏掉；
+ * - 上界补到纳秒满位 —— 保证当天 23:59:59 之后的任意精度都落在区间内。
+ */
+export function localDayBounds(dateKey: string): { from: string; to: string } {
+  const [y, m, d] = dateKey.split('-').map(Number);
+  const start = new Date(y, m - 1, d, 0, 0, 0);
+  const end = new Date(y, m - 1, d, 23, 59, 59);
+  return {
+    from: start.toISOString().slice(0, 19) + '+00:00',
+    to: end.toISOString().slice(0, 19) + '.999999999+00:00',
+  };
+}
+
+/** Date → 本地日期键（YYYY-MM-DD），用于与后端 `DailyActivity.date` 对齐 */
+export function toDateKey(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
 }
 
 /** 时间范围筛选项 */

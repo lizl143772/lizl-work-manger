@@ -45,6 +45,13 @@ export const useTaskStore = defineStore('task', () => {
   }
 
   async function loadTasks() {
+    // 日历视图不渲染任务列表，数据由 CalendarView 按天自行取
+    if (projectStore.isCalendarView) {
+      tasks.value = [];
+      error.value = null;
+      loading.value = false;
+      return;
+    }
     loading.value = true;
     error.value = null;
     try {

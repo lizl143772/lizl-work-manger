@@ -1,5 +1,5 @@
 import { invoke } from '@tauri-apps/api/core';
-import type { Task, Project, TaskPage, TaskCountsSummary, CreateTaskInput, TaskQuery, CreateProjectInput, UpdateProjectInput, TaskStatus, TaskUpdateInput } from '../types/task';
+import type { Task, Project, TaskPage, TaskCountsSummary, CreateTaskInput, TaskQuery, CreateProjectInput, UpdateProjectInput, TaskStatus, TaskUpdateInput, DailyActivity } from '../types/task';
 
 export const api = {
   // Tasks
@@ -12,6 +12,9 @@ export const api = {
   moveTask: (taskId: string, projectId: string) => invoke<Task>('move_task', { taskId, projectId }),
   deleteTask: (taskId: string) => invoke<Task>('delete_task', { taskId }),
   restoreTask: (taskId: string) => invoke<Task>('restore_task', { taskId }),
+
+  // Calendar —— 取 from~to（本地日期 YYYY-MM-DD，闭区间）内每天的活跃度汇总
+  getDailyActivity: (from: string, to: string) => invoke<DailyActivity[]>('get_daily_activity', { from, to }),
 
   // Projects
   listProjects: (includeArchived: boolean = false) => invoke<Project[]>('list_projects', { includeArchived }),
