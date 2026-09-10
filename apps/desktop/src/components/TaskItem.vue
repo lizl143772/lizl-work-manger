@@ -4,7 +4,7 @@ import type { Task, TaskStatus } from '../types/task';
 import { useTaskStore } from '../stores/taskStore';
 import { useUiStore } from '../stores/uiStore';
 import { useProjectStore } from '../stores/projectStore';
-import { Circle, CheckCircle2, PlayCircle, Trash2, Flag, X, Clock, Calendar, Check } from 'lucide-vue-next';
+import { Circle, CheckCircle2, PlayCircle, Trash2, Flag, X, Clock, Calendar, Check, ChevronRight } from 'lucide-vue-next';
 import Vditor from 'vditor';
 import 'vditor/dist/index.css';
 import { marked } from 'marked';
@@ -356,8 +356,23 @@ const del = () => {
   taskStore.removeTask(props.task.id);
 };
 
-// Context Menu
-const contextMenu = ref({ show: false, x: 0, y: 0 });
+// Context Menu —— 一级只放「标记优先级 / 设置项目」入口，具体选项收进二级菜单
+const MENU_WIDTH = 176;     // 一级菜单宽度 (w-44)
+const SUBMENU_WIDTH = 176;  // 二级菜单宽度 (w-44)
+const MENU_HEIGHT = 150;    // 一级菜单大致高度（3 行），用于避免超出视口底部
+
+const contextMenu = ref({
+  show: false,
+  x: 0,
+  y: 0,
+  /** 右侧空间不足时，二级菜单改为向左展开 */
+  submenuLeft: false,
+  /** 菜单靠近视口下半部时，二级菜单改为向上对齐展开 */
+  submenuBottom: false,
+});
+
+/** 当前展开的二级菜单 */
+const openSub = ref<'priority' | 'project' | null>(null);
 
 const priorityOptions = [
   { value: 0, text: '无优先级', iconColor: 'text-slate-400' },
@@ -366,18 +381,35 @@ const priorityOptions = [
   { value: 3, text: '高优先级', iconColor: 'text-rose-500' },
 ];
 
+/** 二级菜单相对一级项的定位（左右翻转按可用空间决定） */
+const submenuAnchorClass = computed(() =>
+  contextMenu.value.submenuLeft ? 'right-full pr-1' : 'left-full pl-1'
+);
+const submenuAnchorStyle = computed(() =>
+  contextMenu.value.submenuBottom ? { bottom: '0px', top: 'auto' } : { top: '0px' }
+);
+
 const onContextMenu = (e: MouseEvent) => {
-  const menuWidth = 180;
-  const menuHeight = 360;
+  const x = Math.max(8, Math.min(e.clientX, window.innerWidth - MENU_WIDTH - 8));
+  const y = Math.max(8, Math.min(e.clientY, window.innerHeight - MENU_HEIGHT - 8));
   contextMenu.value = {
     show: true,
-    x: Math.min(e.clientX, window.innerWidth - menuWidth - 8),
-    y: Math.min(e.clientY, window.innerHeight - menuHeight - 8),
+    x,
+    y,
+    submenuLeft: x + MENU_WIDTH + SUBMENU_WIDTH + 8 > window.innerWidth,
+    submenuBottom: y > window.innerHeight / 2,
   };
+  openSub.value = null;
 };
 
 const closeContextMenu = () => {
   contextMenu.value.show = false;
+  openSub.value = null;
+};
+
+/** 点击一级项切换二级菜单（悬停展开由模板中的 @mouseenter 负责） */
+const toggleSub = (key: 'priority' | 'project') => {
+  openSub.value = openSub.value === key ? null : key;
 };
 
 const setPriority = (p: number) => {
@@ -407,7 +439,7 @@ const deleteFromMenu = () => {
 <template>
   <div 
     class="group relative flex flex-col px-4 py-3 mx-6 mb-3 bg-white rounded-xl border shadow-[0_1px_2px_rgba(0,0,0,0.02)] hover:shadow-sm transition-all duration-200 cursor-pointer"
-    :class="cardBorderClass"
+    :class="[cardBorderClass, !isExpanded ? 'min-h-[88px]' : '']"
     :data-task-item="task.id"
     @click="toggleExpand"
     @contextmenu.prevent="onContextMenu"
@@ -568,43 +600,92 @@ const deleteFromMenu = () => {
     <!-- Context Menu -->
     <Teleport to="body">
       <div v-if="contextMenu.show" class="fixed inset-0 z-[130]" data-no-collapse @click="closeContextMenu" @contextmenu.prevent="closeContextMenu">
-        <div 
-          class="absolute w-44 bg-white rounded-xl shadow-xl border border-slate-100 py-1.5 overflow-hidden"
+        <div
+          class="absolute w-44 bg-white rounded-xl shadow-xl border border-slate-100 py-1.5"
           :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
           @click.stop
         >
-          <div class="px-3 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">标记优先级</div>
-          <button 
-            v-for="opt in priorityOptions" 
-            :key="opt.value"
-            @click="setPriority(opt.value)"
-            class="w-full flex items-center px-3 py-1.5 text-[13px] text-slate-700 hover:bg-slate-50 transition-colors"
-          >
-            <Flag class="w-3.5 h-3.5 mr-2.5" :class="opt.iconColor" />
-            <span class="flex-1 text-left">{{ opt.text }}</span>
-            <Check v-if="task.priority === opt.value" class="w-3.5 h-3.5 text-blue-500" />
-          </button>
-
-          <div class="my-1 border-t border-slate-100"></div>
-
-          <div class="px-3 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">设置项目</div>
-          <div class="max-h-36 overflow-y-auto">
-            <button 
-              v-for="proj in projectStore.activeProjects" 
-              :key="proj.id"
-              @click="moveToProject(proj.id)"
-              class="w-full flex items-center px-3 py-1.5 text-[13px] text-slate-700 hover:bg-slate-50 transition-colors"
+          <!-- 二级菜单：标记优先级 -->
+          <div class="relative">
+            <button
+              @click="toggleSub('priority')"
+              @mouseenter="openSub = 'priority'"
+              :class="['w-full flex items-center px-3 py-1.5 text-[13px] text-slate-700 transition-colors',
+                       openSub === 'priority' ? 'bg-slate-50' : 'hover:bg-slate-50']"
             >
-              <span class="w-2 h-2 rounded-full mr-2.5 flex-shrink-0" :style="{ backgroundColor: proj.color }"></span>
-              <span class="flex-1 text-left truncate">{{ proj.name }}</span>
-              <Check v-if="task.project_id === proj.id" class="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
+              <Flag class="w-3.5 h-3.5 mr-2.5" :class="priorityInfo.iconColor" />
+              <span class="flex-1 text-left">标记优先级</span>
+              <span class="text-[11px] text-slate-400 mr-1.5 shrink-0">{{ priorityInfo.text }}</span>
+              <ChevronRight class="w-3.5 h-3.5 text-slate-300 shrink-0" />
             </button>
+
+            <Transition name="submenu">
+              <div
+                v-if="openSub === 'priority'"
+                class="absolute z-10"
+                :class="submenuAnchorClass"
+                :style="submenuAnchorStyle"
+              >
+                <div class="w-44 bg-white rounded-xl shadow-xl shadow-slate-900/10 border border-slate-100 py-1.5">
+                  <button
+                    v-for="opt in priorityOptions"
+                    :key="opt.value"
+                    @click="setPriority(opt.value)"
+                    class="w-full flex items-center px-3 py-1.5 text-[13px] text-slate-700 hover:bg-slate-50 transition-colors"
+                  >
+                    <Flag class="w-3.5 h-3.5 mr-2.5" :class="opt.iconColor" />
+                    <span class="flex-1 text-left">{{ opt.text }}</span>
+                    <Check v-if="task.priority === opt.value" class="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                  </button>
+                </div>
+              </div>
+            </Transition>
           </div>
 
-          <div class="my-1 border-t border-slate-100"></div>
+          <!-- 二级菜单：设置项目 -->
+          <div class="relative">
+            <button
+              @click="toggleSub('project')"
+              @mouseenter="openSub = 'project'"
+              :class="['w-full flex items-center px-3 py-1.5 text-[13px] text-slate-700 transition-colors',
+                       openSub === 'project' ? 'bg-slate-50' : 'hover:bg-slate-50']"
+            >
+              <span class="w-2 h-2 rounded-full mr-3 shrink-0" :style="{ backgroundColor: taskProject?.color || '#cbd5e1' }"></span>
+              <span class="flex-1 text-left">设置项目</span>
+              <span class="text-[11px] text-slate-400 mr-1.5 shrink-0 max-w-[3.5rem] truncate">{{ taskProject?.name || '—' }}</span>
+              <ChevronRight class="w-3.5 h-3.5 text-slate-300 shrink-0" />
+            </button>
 
-          <button 
+            <Transition name="submenu">
+              <div
+                v-if="openSub === 'project'"
+                class="absolute z-10"
+                :class="submenuAnchorClass"
+                :style="submenuAnchorStyle"
+              >
+                <div class="w-44 bg-white rounded-xl shadow-xl shadow-slate-900/10 border border-slate-100 py-1.5">
+                  <div class="max-h-64 overflow-y-auto">
+                    <button
+                      v-for="proj in projectStore.activeProjects"
+                      :key="proj.id"
+                      @click="moveToProject(proj.id)"
+                      class="w-full flex items-center px-3 py-1.5 text-[13px] text-slate-700 hover:bg-slate-50 transition-colors"
+                    >
+                      <span class="w-2 h-2 rounded-full mr-2.5 shrink-0" :style="{ backgroundColor: proj.color }"></span>
+                      <span class="flex-1 text-left truncate">{{ proj.name }}</span>
+                      <Check v-if="task.project_id === proj.id" class="w-3.5 h-3.5 text-blue-500 shrink-0" />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </Transition>
+          </div>
+
+          <div class="my-1 border-t border-slate-100" @mouseenter="openSub = null"></div>
+
+          <button
             @click="deleteFromMenu"
+            @mouseenter="openSub = null"
             class="w-full flex items-center px-3 py-1.5 text-[13px] text-rose-600 hover:bg-rose-50 transition-colors"
           >
             <Trash2 class="w-3.5 h-3.5 mr-2.5" />
@@ -633,6 +714,16 @@ const deleteFromMenu = () => {
 }
 .fade-enter-from,
 .fade-leave-to {
+  opacity: 0;
+}
+
+/* 二级菜单（右键菜单）淡入淡出 */
+.submenu-enter-active,
+.submenu-leave-active {
+  transition: opacity 0.12s ease;
+}
+.submenu-enter-from,
+.submenu-leave-to {
   opacity: 0;
 }
 </style>
