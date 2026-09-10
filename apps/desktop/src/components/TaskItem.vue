@@ -3,7 +3,8 @@ import { ref, computed, watch, nextTick } from 'vue';
 import type { Task, TaskStatus } from '../types/task';
 import { useTaskStore } from '../stores/taskStore';
 import { useUiStore } from '../stores/uiStore';
-import { Circle, CheckCircle2, PlayCircle, Trash2, Flag, X, Clock, Calendar } from 'lucide-vue-next';
+import { useProjectStore } from '../stores/projectStore';
+import { Circle, CheckCircle2, PlayCircle, Trash2, Flag, X, Clock, Calendar, Check } from 'lucide-vue-next';
 import Vditor from 'vditor';
 import 'vditor/dist/index.css';
 import { marked } from 'marked';
@@ -11,13 +12,12 @@ import { marked } from 'marked';
 const props = defineProps<{ task: Task }>();
 const taskStore = useTaskStore();
 const uiStore = useUiStore();
+const projectStore = useProjectStore();
 
 const isExpanded = computed(() => taskStore.expandedTaskId === props.task.id);
 
 const editTitle = ref(props.task.title);
 const editDesc = ref(props.task.description || '');
-
-const titleInputRef = ref<HTMLInputElement | null>(null);
 
 const formatTimeInput = (iso?: string | null) => {
   if (!iso) return '';
@@ -212,7 +212,7 @@ watch(isExpanded, async (val) => {
         mode: 'ir',
         value: editDesc.value,
         cache: { enable: false },
-        outline: { enable: false },
+        outline: { enable: false, position: 'left' },
         toolbar: ['headings', 'bold', 'italic', 'strike', '|', 'list', 'ordered-list', 'check', '|', 'quote', 'code', 'inline-code', 'table', '|', 'undo', 'redo'],
         height: 'auto',
         minHeight: 150,
@@ -250,14 +250,12 @@ const onPaste = async (e: ClipboardEvent) => {
   if (!items || items.length === 0) return;
   
   const newImages: string[] = [];
-  let foundImage = false;
   
   for (let i = 0; i < items.length; i++) {
     const item = items[i];
     if (item.type.startsWith('image/') || item.kind === 'file') {
       const file = item.getAsFile();
       if (file && file.type.startsWith('image/')) {
-        foundImage = true;
         const reader = new FileReader();
         const p = new Promise<string>((resolve) => {
           reader.onload = (ev) => resolve(ev.target?.result as string);
@@ -308,6 +306,18 @@ const priorityInfo = computed(() => {
   }
 });
 
+const cardBorderClass = computed(() => {
+  switch(props.task.priority) {
+    case 1: return 'border-blue-200 hover:border-blue-400';
+    case 2: return 'border-amber-300 hover:border-amber-500';
+    case 3: return 'border-rose-400 hover:border-rose-600';
+    default: return 'border-slate-100 hover:border-slate-300';
+  }
+});
+
+const taskProject = computed(() => projectStore.projects.find(p => p.id === props.task.project_id));
+const showProjectBadge = computed(() => projectStore.currentViewId === 'inbox' && !!taskProject.value);
+
 const changePriority = () => {
   const next = (props.task.priority + 1) % 4;
   taskStore.updatePriority(props.task.id, next);
@@ -317,12 +327,60 @@ const del = () => {
   taskStore.removeTask(props.task.id);
 };
 
+// Context Menu
+const contextMenu = ref({ show: false, x: 0, y: 0 });
+
+const priorityOptions = [
+  { value: 0, text: '无优先级', iconColor: 'text-slate-400' },
+  { value: 1, text: '低优先级', iconColor: 'text-blue-500' },
+  { value: 2, text: '中优先级', iconColor: 'text-amber-500' },
+  { value: 3, text: '高优先级', iconColor: 'text-rose-500' },
+];
+
+const onContextMenu = (e: MouseEvent) => {
+  const menuWidth = 180;
+  const menuHeight = 360;
+  contextMenu.value = {
+    show: true,
+    x: Math.min(e.clientX, window.innerWidth - menuWidth - 8),
+    y: Math.min(e.clientY, window.innerHeight - menuHeight - 8),
+  };
+};
+
+const closeContextMenu = () => {
+  contextMenu.value.show = false;
+};
+
+const setPriority = (p: number) => {
+  closeContextMenu();
+  if (p !== props.task.priority) taskStore.updatePriority(props.task.id, p);
+};
+
+const moveToProject = async (projectId: string) => {
+  closeContextMenu();
+  if (projectId === props.task.project_id) return;
+  try {
+    await taskStore.moveTask(props.task.id, projectId);
+    const proj = projectStore.projects.find(p => p.id === projectId);
+    uiStore.showMessage(`已移动到「${proj?.name || '项目'}」`, 'success');
+  } catch (e: any) {
+    uiStore.showMessage(e.message || '移动任务失败', 'error');
+  }
+};
+
+const deleteFromMenu = () => {
+  closeContextMenu();
+  del();
+};
+
 </script>
 
 <template>
   <div 
-    class="group relative flex flex-col px-4 py-3 mx-6 mb-3 bg-white rounded-xl border border-slate-100 hover:border-slate-300 shadow-[0_1px_2px_rgba(0,0,0,0.02)] hover:shadow-sm transition-all duration-200 cursor-pointer"
+    class="group relative flex flex-col px-4 py-3 mx-6 mb-3 bg-white rounded-xl border shadow-[0_1px_2px_rgba(0,0,0,0.02)] hover:shadow-sm transition-all duration-200 cursor-pointer"
+    :class="cardBorderClass"
     @click="toggleExpand"
+    @contextmenu.prevent="onContextMenu"
     @paste="onPaste"
     tabindex="0"
   >
@@ -339,10 +397,9 @@ const del = () => {
         <!-- Expanded Title Edit -->
         <div v-if="isExpanded" @click.stop>
           <input 
-            ref="titleInputRef"
             v-model="editTitle" 
             @change="saveDetails"
-            @keydown.enter="$event.target.blur()"
+            @keydown.enter="($event.target as HTMLInputElement).blur()"
             type="text"
             class="w-full bg-transparent border-0 px-0 py-0 text-[15px] font-medium text-slate-800 focus:outline-none focus:ring-0 mb-2"
             placeholder="任务标题"
@@ -363,7 +420,11 @@ const del = () => {
         <div v-if="!isExpanded">
           <div v-if="renderedMarkdown" class="prose prose-sm prose-slate max-w-none prose-p:my-1 prose-ul:my-1 prose-ol:my-1 opacity-70 mb-2 line-clamp-3 text-[13px]" v-html="renderedMarkdown"></div>
           
-          <div class="flex flex-wrap items-center gap-3 mt-1.5 text-[11px] text-slate-400">
+          <div class="flex flex-wrap items-center gap-3 mt-1.5 pr-10 text-[11px] text-slate-400">
+            <span v-if="showProjectBadge" class="flex items-center space-x-1 px-1.5 py-0.5 rounded-md bg-slate-50 border border-slate-100 text-slate-500" :title="'所属项目: ' + taskProject!.name">
+              <span class="w-1.5 h-1.5 rounded-full flex-shrink-0" :style="{ backgroundColor: taskProject!.color }"></span>
+              <span>{{ taskProject!.name }}</span>
+            </span>
             <span class="flex items-center space-x-1" title="录入时间">
               <span>录入: {{ formatDate(task.created_at) }}</span>
             </span>
@@ -382,6 +443,17 @@ const del = () => {
           </div>
         </div>
       </div>
+
+      <!-- Collapsed Priority Toggle -->
+      <button
+        v-if="!isExpanded"
+        @click.stop="changePriority"
+        :class="['ml-3 mt-0.5 flex-shrink-0 flex items-center space-x-1 text-[11px] px-2 py-1 rounded-md border font-medium transition-colors', priorityInfo.color]"
+        title="切换优先级"
+      >
+        <Flag class="w-3 h-3" :class="priorityInfo.iconColor" />
+        <span>{{ priorityInfo.text }}</span>
+      </button>
     </div>
     
     <!-- Expanded Area -->
@@ -393,7 +465,7 @@ const del = () => {
       </div>
       
       <!-- Actions: Bottom Left -->
-      <div class="flex items-center space-x-3 pt-1">
+      <div class="flex items-center space-x-3 pt-1 pr-10">
         <button 
           @click.stop="changePriority" 
           :class="['flex items-center space-x-1 text-xs px-2 py-1 rounded-md border font-medium transition-colors', priorityInfo.color]"
@@ -411,15 +483,6 @@ const del = () => {
           <Calendar class="w-3 h-3" />
           <span>时间规划</span>
         </button>
-
-        <button 
-          @click.stop="del" 
-          class="flex items-center space-x-1 px-2 py-1 text-xs text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-md transition-colors"
-          title="删除任务"
-        >
-          <Trash2 class="w-3 h-3" />
-          <span>删除</span>
-        </button>
         
         <div class="flex-1"></div>
         <span class="text-[11px] text-slate-400 italic">在卡片内使用 Ctrl+V 可直接上传图片</span>
@@ -427,7 +490,7 @@ const del = () => {
     </div>
     
     <!-- Image Thumbnails (Always visible at bottom) -->
-    <div v-if="attachments.length > 0" class="flex flex-wrap gap-2 mt-3 pl-9">
+    <div v-if="attachments.length > 0" class="flex flex-wrap gap-2 mt-3 pl-9 pr-10">
       <div v-for="(img, idx) in attachments" :key="idx" class="relative group/img">
         <img @click.stop="uiStore.openPreview(attachments, idx)" :src="img" class="h-16 w-16 object-cover rounded-md border border-slate-200 shadow-sm cursor-pointer hover:opacity-90 transition-opacity" title="点击放大预览" />
         <button @click.stop="removeImage(idx)" class="absolute -top-1.5 -right-1.5 bg-rose-500 text-white rounded-full p-0.5 opacity-0 group-hover/img:opacity-100 transition-opacity z-10" title="删除图片">
@@ -471,6 +534,64 @@ const del = () => {
         </div>
       </Transition>
     </Teleport>
+
+    <!-- Context Menu -->
+    <Teleport to="body">
+      <div v-if="contextMenu.show" class="fixed inset-0 z-[130]" @click="closeContextMenu" @contextmenu.prevent="closeContextMenu">
+        <div 
+          class="absolute w-44 bg-white rounded-xl shadow-xl border border-slate-100 py-1.5 overflow-hidden"
+          :style="{ left: contextMenu.x + 'px', top: contextMenu.y + 'px' }"
+          @click.stop
+        >
+          <div class="px-3 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">标记优先级</div>
+          <button 
+            v-for="opt in priorityOptions" 
+            :key="opt.value"
+            @click="setPriority(opt.value)"
+            class="w-full flex items-center px-3 py-1.5 text-[13px] text-slate-700 hover:bg-slate-50 transition-colors"
+          >
+            <Flag class="w-3.5 h-3.5 mr-2.5" :class="opt.iconColor" />
+            <span class="flex-1 text-left">{{ opt.text }}</span>
+            <Check v-if="task.priority === opt.value" class="w-3.5 h-3.5 text-blue-500" />
+          </button>
+
+          <div class="my-1 border-t border-slate-100"></div>
+
+          <div class="px-3 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider">设置项目</div>
+          <div class="max-h-36 overflow-y-auto">
+            <button 
+              v-for="proj in projectStore.activeProjects" 
+              :key="proj.id"
+              @click="moveToProject(proj.id)"
+              class="w-full flex items-center px-3 py-1.5 text-[13px] text-slate-700 hover:bg-slate-50 transition-colors"
+            >
+              <span class="w-2 h-2 rounded-full mr-2.5 flex-shrink-0" :style="{ backgroundColor: proj.color }"></span>
+              <span class="flex-1 text-left truncate">{{ proj.name }}</span>
+              <Check v-if="task.project_id === proj.id" class="w-3.5 h-3.5 text-blue-500 flex-shrink-0" />
+            </button>
+          </div>
+
+          <div class="my-1 border-t border-slate-100"></div>
+
+          <button 
+            @click="deleteFromMenu"
+            class="w-full flex items-center px-3 py-1.5 text-[13px] text-rose-600 hover:bg-rose-50 transition-colors"
+          >
+            <Trash2 class="w-3.5 h-3.5 mr-2.5" />
+            <span>删除任务</span>
+          </button>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- Delete Button (always visible at bottom-right) -->
+    <button
+      @click.stop="del"
+      class="absolute bottom-3 right-3 p-1.5 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors z-10"
+      title="删除任务"
+    >
+      <Trash2 class="w-4 h-4" />
+    </button>
 
   </div>
 </template>

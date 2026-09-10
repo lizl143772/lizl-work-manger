@@ -33,14 +33,14 @@ export const useProjectStore = defineStore('project', () => {
     counts.value = await api.getTaskCounts();
   }
 
-  async function addProject(name: string) {
-    const res = await api.createProject({ name });
+  async function addProject(name: string, color?: string, icon?: string) {
+    const res = await api.createProject({ name, color, icon });
     projects.value.push(res);
     return res;
   }
   
-  async function editProject(id: string, name: string) {
-    const res = await api.updateProject(id, { name });
+  async function editProject(id: string, name: string, color?: string, icon?: string) {
+    const res = await api.updateProject(id, { name, color, icon });
     const idx = projects.value.findIndex(p => p.id === id);
     if (idx !== -1) projects.value[idx] = res;
   }

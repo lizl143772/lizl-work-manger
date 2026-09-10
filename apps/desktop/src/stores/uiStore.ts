@@ -1,4 +1,7 @@
 import { defineStore } from 'pinia';
+import { setPinned, enterMiniMode, exitMiniMode } from '../lib/window';
+
+const PIN_STORAGE_KEY = 'workmanager.alwaysOnTop';
 
 interface Toast {
   id: string;
@@ -21,8 +24,26 @@ export const useUiStore = defineStore('ui', {
     previewImages: [] as string[],
     previewIndex: 0,
     isPreviewOpen: false,
+    isPinned: localStorage.getItem(PIN_STORAGE_KEY) === '1',
+    isMiniMode: false,
   }),
   actions: {
+    async togglePin() {
+      this.isPinned = !this.isPinned;
+      localStorage.setItem(PIN_STORAGE_KEY, this.isPinned ? '1' : '0');
+      await setPinned(this.isPinned);
+    },
+    async applyPinOnStartup() {
+      if (this.isPinned) await setPinned(true);
+    },
+    async toggleMiniMode() {
+      this.isMiniMode = !this.isMiniMode;
+      if (this.isMiniMode) {
+        await enterMiniMode();
+      } else {
+        await exitMiniMode(this.isPinned);
+      }
+    },
     showMessage(msg: string, type: 'success' | 'error' | 'info' = 'info') {
       const id = Math.random().toString(36).substring(2);
       this.toasts.push({ id, message: msg, type });

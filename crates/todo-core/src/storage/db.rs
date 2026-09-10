@@ -361,12 +361,11 @@ impl Database {
         
         let mut projects = std::collections::HashMap::new();
         let mut inbox = 0;
-        
+
         for row in iter {
             let (pid, count) = row?;
-            if pid == inbox_id {
-                inbox = count;
-            } else {
+            inbox += count;
+            if pid != inbox_id {
                 projects.insert(pid, count);
             }
         }

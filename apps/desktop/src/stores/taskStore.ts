@@ -27,8 +27,9 @@ export const useTaskStore = defineStore('task', () => {
     error.value = null;
     try {
       const isCompletedView = projectStore.currentViewId === 'completed';
+      const isInboxView = projectStore.currentViewId === 'inbox';
       const query = {
-        project_id: projectStore.currentViewActualId,
+        project_id: isInboxView ? undefined : projectStore.currentViewActualId,
         statuses: isCompletedView ? ['completed' as TaskStatus] : ['todo' as TaskStatus, 'in_progress' as TaskStatus],
         page: 1,
         page_size: 100
