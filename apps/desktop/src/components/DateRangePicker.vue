@@ -6,6 +6,9 @@ import { DATE_RANGE_OPTIONS, type DateRangeKey } from '../types/task';
 
 const taskStore = useTaskStore();
 
+/** 小窗模式下面板空间紧张：只显示日历图标，隐藏文字与下拉箭头 */
+const props = withDefaults(defineProps<{ compact?: boolean }>(), { compact: false });
+
 const open = ref(false);
 const rootEl = ref<HTMLElement | null>(null);
 
@@ -46,15 +49,20 @@ onBeforeUnmount(() => {
     <!-- Trigger -->
     <button
       @click="toggle"
-      :class="['flex items-center space-x-1.5 pl-2.5 pr-2 py-1.5 rounded-lg text-xs font-medium transition-colors',
+      :class="['flex items-center rounded-lg text-xs font-medium transition-colors',
+               props.compact ? 'p-1.5' : 'space-x-1.5 pl-2.5 pr-2 py-1.5',
                isFiltered
                  ? 'bg-blue-50 text-blue-700 hover:bg-blue-100'
                  : 'text-slate-500 hover:bg-slate-100 hover:text-slate-700']"
       :title="`当前时间范围：${taskStore.currentDateRangeLabel}（全局生效）`"
     >
       <CalendarRange class="w-3.5 h-3.5" />
-      <span>{{ taskStore.currentDateRangeLabel }}</span>
-      <ChevronDown class="w-3 h-3 transition-transform duration-200" :class="open ? 'rotate-180' : ''" />
+      <span v-if="!props.compact">{{ taskStore.currentDateRangeLabel }}</span>
+      <ChevronDown
+        v-if="!props.compact"
+        class="w-3 h-3 transition-transform duration-200"
+        :class="open ? 'rotate-180' : ''"
+      />
     </button>
 
     <!-- Dropdown -->

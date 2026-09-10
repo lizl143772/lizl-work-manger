@@ -47,14 +47,16 @@ const closeWindow = async () => {
     @mousedown="startDrag"
     @dblclick="toggleMaximize"
   >
-    <!-- Brand + 全局时间范围 -->
-    <div class="flex items-center px-3 space-x-2">
-      <div class="w-5 h-5 bg-blue-600 rounded-md flex items-center justify-center">
-        <CheckCircle class="w-3.5 h-3.5 text-white" />
-      </div>
-      <span class="text-xs font-bold text-slate-700 tracking-tight">lizl 待办管理</span>
-      <div class="w-px h-3.5 bg-slate-200"></div>
-      <DateRangePicker />
+    <!-- Brand + 全局时间范围（小窗模式下只保留时间范围图标，避免窄窗排版溢出） -->
+    <div class="flex items-center space-x-2" :class="uiStore.isMiniMode ? 'px-2' : 'px-3'">
+      <template v-if="!uiStore.isMiniMode">
+        <div class="w-5 h-5 bg-blue-600 rounded-md flex items-center justify-center">
+          <CheckCircle class="w-3.5 h-3.5 text-white" />
+        </div>
+        <span class="text-xs font-bold text-slate-700 tracking-tight">lizl 待办管理</span>
+        <div class="w-px h-3.5 bg-slate-200"></div>
+      </template>
+      <DateRangePicker :compact="uiStore.isMiniMode" />
     </div>
 
     <!-- Window Actions -->
