@@ -69,3 +69,47 @@ pub fn get_daily_activity(state: State<AppState>, from: String, to: String) -> C
     let res = db.get_daily_activity(&from, &to)?;
     Ok(res)
 }
+
+// ---------- 回收站 ----------
+
+#[tauri::command]
+pub fn list_deleted_tasks(
+    state: State<AppState>,
+    keyword: Option<String>,
+    page: Option<u32>,
+    page_size: Option<u32>,
+) -> CommandResult<todo_core::TaskPage> {
+    let db = state.db.lock().unwrap();
+    let res = db.list_deleted_tasks(keyword, page.unwrap_or(1), page_size.unwrap_or(200))?;
+    Ok(res)
+}
+
+#[tauri::command]
+pub fn purge_task(state: State<AppState>, task_id: String) -> CommandResult<()> {
+    let db = state.db.lock().unwrap();
+    db.purge_task(&task_id)?;
+    Ok(())
+}
+
+#[tauri::command]
+pub fn purge_deleted_tasks(state: State<AppState>) -> CommandResult<u64> {
+    let db = state.db.lock().unwrap();
+    let n = db.purge_deleted_tasks()?;
+    Ok(n)
+}
+
+#[tauri::command]
+pub fn purge_expired_deleted_tasks(state: State<AppState>, retention_days: i64) -> CommandResult<u64> {
+    let db = state.db.lock().unwrap();
+    let n = db.purge_expired_deleted_tasks(retention_days)?;
+    Ok(n)
+}
+
+// ---------- 统计 ----------
+
+#[tauri::command]
+pub fn get_task_stats(state: State<AppState>) -> CommandResult<todo_core::TaskStats> {
+    let db = state.db.lock().unwrap();
+    let res = db.get_task_stats()?;
+    Ok(res)
+}

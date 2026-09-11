@@ -103,5 +103,66 @@ pub fn migrate(conn: &mut Connection) -> Result<()> {
         tx.commit()?;
     }
 
+    if version < 5 {
+        // 回收站：按删除时间倒序列出，并按保留期批量清理
+        let tx = conn.transaction()?;
+        tx.execute_batch(
+            "
+            CREATE INDEX IF NOT EXISTS idx_tasks_deleted_at
+            ON tasks(deleted_at) WHERE deleted_at IS NOT NULL;
+            INSERT INTO schema_migrations (version) VALUES (5);
+            "
+        )?;
+        tx.commit()?;
+    }
+
+    if version < 6 {
+        // 实际开始时间：任务首次进入「进行中」时打点，
+        // 让「耗时」不再依赖用户手动填写的任务时间
+        let tx = conn.transaction()?;
+        tx.execute_batch(
+            "
+            ALTER TABLE tasks ADD COLUMN started_at TEXT;
+            INSERT INTO schema_migrations (version) VALUES (6);
+            "
+        )?;
+        tx.commit()?;
+    }
+
+    if version < 7 {
+        // 一次性回填历史数据。
+        //
+        // v6 之前没有 started_at，导致这批任务的耗时永远是空。
+        // 这里用「录入时间」当近似起点补上——注意它是「跨度」而非「纯工时」，
+        // 隔天完成的任务会得到很大的值，这是用户明确选择的口径。
+        //
+        // 只处理 time_spent 为空的行：已经有耗时的（例如按任务时间算出来的）
+        // 语义是对的，重算反而会变坏。
+        let tx = conn.transaction()?;
+        tx.execute_batch(
+            "
+            UPDATE tasks
+            SET started_at = created_at,
+                time_spent = CAST(ROUND((julianday(completed_at) - julianday(created_at)) * 1440) AS INTEGER)
+            WHERE deleted_at IS NULL
+              AND started_at IS NULL
+              AND completed_at IS NOT NULL
+              AND time_spent IS NULL
+              AND created_at IS NOT NULL
+              AND julianday(completed_at) >= julianday(created_at);
+
+            UPDATE tasks
+            SET started_at = created_at
+            WHERE deleted_at IS NULL
+              AND started_at IS NULL
+              AND status = 'in_progress'
+              AND created_at IS NOT NULL;
+
+            INSERT INTO schema_migrations (version) VALUES (7);
+            "
+        )?;
+        tx.commit()?;
+    }
+
     Ok(())
 }

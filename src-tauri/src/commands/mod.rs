@@ -1,5 +1,6 @@
 pub mod task_cmd;
 pub mod project_cmd;
+pub mod app_cmd;
 
 use serde::Serialize;
 use todo_core::TodoError;

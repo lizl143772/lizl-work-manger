@@ -8,6 +8,8 @@ use std::path::PathBuf;
 
 pub struct AppState {
     pub db: Mutex<Database>,
+    /// 当前数据库文件路径，供设置页展示
+    pub db_path: PathBuf,
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -30,9 +32,10 @@ pub fn run() {
                 fs::create_dir_all(parent).unwrap_or(());
             }
 
-            let db = Database::new(db_path).expect("Failed to initialize database");
+            let db = Database::new(&db_path).expect("Failed to initialize database");
             app.manage(AppState {
                 db: Mutex::new(db),
+                db_path,
             });
             Ok(())
         })
@@ -46,12 +49,18 @@ pub fn run() {
             commands::task_cmd::delete_task,
             commands::task_cmd::restore_task,
             commands::task_cmd::get_daily_activity,
+            commands::task_cmd::list_deleted_tasks,
+            commands::task_cmd::purge_task,
+            commands::task_cmd::purge_deleted_tasks,
+            commands::task_cmd::purge_expired_deleted_tasks,
+            commands::task_cmd::get_task_stats,
             commands::project_cmd::list_projects,
             commands::project_cmd::create_project,
             commands::project_cmd::update_project,
             commands::project_cmd::archive_project,
             commands::project_cmd::delete_project,
             commands::project_cmd::get_task_counts,
+            commands::app_cmd::get_app_info,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
