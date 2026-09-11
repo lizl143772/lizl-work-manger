@@ -5,6 +5,7 @@ import { useTaskStore } from '../stores/taskStore';
 import { useUiStore } from '../stores/uiStore';
 import { useProjectStore } from '../stores/projectStore';
 import { Circle, CheckCircle2, PlayCircle, Trash2, Flag, X, Clock, Calendar, Check, ChevronRight } from 'lucide-vue-next';
+import { formatDuration, taskDurationText } from '../lib/duration';
 import Vditor from 'vditor';
 import 'vditor/dist/index.css';
 import { marked } from 'marked';
@@ -28,18 +29,36 @@ const formatTimeInput = (iso?: string | null) => {
 
 const showTimeModal = ref(false);
 const editDueDate = ref(formatTimeInput(props.task.due_date));
+const editStartedAt = ref(formatTimeInput(props.task.started_at));
 const editCompletedAt = ref(formatTimeInput(props.task.completed_at));
 
-// Watch inputs and auto-calculate time spent
-const autoTimeSpent = computed(() => {
-  if (editDueDate.value && editCompletedAt.value) {
-    const start = new Date(editDueDate.value).getTime();
-    const end = new Date(editCompletedAt.value).getTime();
-    const diff = Math.round((end - start) / 60000);
-    return diff > 0 ? diff : 0;
-  }
-  return props.task.time_spent || 0;
+/**
+ * 表单里「起点 → 完成时间」的精确秒数；两个前提缺一就返回 null。
+ * 用时间戳现算而不是读 time_spent，是因为后者只存到分钟、显示不到秒。
+ */
+const autoSpentSeconds = computed(() => {
+  const origin = editStartedAt.value || editDueDate.value;
+  if (!origin || !editCompletedAt.value) return null;
+  const start = new Date(origin).getTime();
+  const end = new Date(editCompletedAt.value).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return null;
+  return Math.max(0, Math.round((end - start) / 1000));
 });
+
+/** 落库用的分钟数（time_spent 是整数分钟）；算不出来就沿用原值 */
+const autoTimeSpent = computed(() =>
+  autoSpentSeconds.value === null
+    ? props.task.time_spent || 0
+    : Math.round(autoSpentSeconds.value / 60)
+);
+
+/** 表单里的耗时展示文案 */
+const autoSpentText = computed(() =>
+  autoSpentSeconds.value === null ? '' : formatDuration(autoSpentSeconds.value)
+);
+
+/** 卡片元数据行展示的耗时，同样优先用时间戳现算、精确到秒 */
+const durationText = computed(() => taskDurationText(props.task));
 
 const attachments = computed<string[]>(() => {
   if (!props.task.attachments) return [];
@@ -80,6 +99,7 @@ const isDirty = computed(() => {
   return t !== props.task.title
     || (editDesc.value.trim() || null) !== (props.task.description || null)
     || editDueDate.value !== formatTimeInput(props.task.due_date)
+    || editStartedAt.value !== formatTimeInput(props.task.started_at)
     || editCompletedAt.value !== formatTimeInput(props.task.completed_at)
     || (autoTimeSpent.value || 0) !== (props.task.time_spent || 0);
 });
@@ -92,6 +112,7 @@ const saveDetails = async () => {
       title: t,
       description: editDesc.value.trim() || null,
       due_date: editDueDate.value ? new Date(editDueDate.value).toISOString() : null,
+      started_at: editStartedAt.value ? new Date(editStartedAt.value).toISOString() : null,
       completed_at: editCompletedAt.value ? new Date(editCompletedAt.value).toISOString() : null,
       time_spent: autoTimeSpent.value > 0 ? autoTimeSpent.value : null
     });
@@ -221,7 +242,11 @@ watch(isExpanded, async (val) => {
   if (val) {
     editTitle.value = props.task.title;
     editDesc.value = props.task.description || '';
-    
+    // 展开时对齐当前任务状态，避免显示上一次遗留的时间
+    editDueDate.value = formatTimeInput(props.task.due_date);
+    editStartedAt.value = formatTimeInput(props.task.started_at);
+    editCompletedAt.value = formatTimeInput(props.task.completed_at);
+
     await nextTick();
     // 等待渲染期间可能已被收起（快速连续切换任务），此时不再创建编辑器，
     // 否则实例会挂在已卸载的容器上造成泄漏
@@ -262,6 +287,20 @@ watch(isExpanded, async (val) => {
     }
   }
 });
+
+/**
+ * 顶部的状态按钮会直接改库里的开始/完成时间与耗时（绕过卡片），
+ * 卡片展开期间必须跟着回填，否则「时间规划」里会显示上一个旧的时间。
+ */
+watch(
+  () => [props.task.due_date, props.task.started_at, props.task.completed_at],
+  () => {
+    if (!isExpanded.value) return;
+    editDueDate.value = formatTimeInput(props.task.due_date);
+    editStartedAt.value = formatTimeInput(props.task.started_at);
+    editCompletedAt.value = formatTimeInput(props.task.completed_at);
+  }
+);
 
 onBeforeUnmount(() => {
   // 卸载前保存未落库的编辑内容，并销毁编辑器实例，避免残留
@@ -494,13 +533,17 @@ const deleteFromMenu = () => {
               <Calendar class="w-3 h-3" />
               <span>{{ formatDate(task.due_date) }}</span>
             </span>
+            <span v-if="task.started_at" class="flex items-center space-x-1" title="开始时间">
+              <PlayCircle class="w-3 h-3" />
+              <span>开始 {{ formatDate(task.started_at) }}</span>
+            </span>
             <span v-if="task.completed_at || task.status === 'completed'" class="flex items-center space-x-1 text-emerald-500" title="完成时间">
               <CheckCircle2 class="w-3 h-3" />
               <span>{{ task.completed_at ? formatDate(task.completed_at) : '已完成' }}</span>
             </span>
-            <span v-if="task.time_spent" class="flex items-center space-x-1" title="已耗时">
+            <span v-if="durationText" class="flex items-center space-x-1" title="已耗时">
               <Clock class="w-3 h-3" />
-              <span>{{ task.time_spent }} min</span>
+              <span>{{ durationText }}</span>
             </span>
           </div>
         </div>
@@ -576,15 +619,20 @@ const deleteFromMenu = () => {
                 <input v-model="editDueDate" type="datetime-local" class="w-full bg-slate-50 rounded-md px-3 py-2 text-sm text-slate-700 ring-1 ring-inset ring-slate-200 focus:ring-blue-500 focus:outline-none" />
               </div>
               <div>
+                <label class="block text-xs font-medium text-slate-500 mb-1">开始时间 (实际)</label>
+                <input v-model="editStartedAt" type="datetime-local" class="w-full bg-slate-50 rounded-md px-3 py-2 text-sm text-slate-700 ring-1 ring-inset ring-slate-200 focus:ring-blue-500 focus:outline-none" />
+                <p class="text-[10px] text-slate-400 mt-1">点左侧圆圈切到「进行中」时自动记录，可手动修正</p>
+              </div>
+              <div>
                 <label class="block text-xs font-medium text-slate-500 mb-1">完成时间 (实际)</label>
                 <input v-model="editCompletedAt" type="datetime-local" class="w-full bg-slate-50 rounded-md px-3 py-2 text-sm text-slate-700 ring-1 ring-inset ring-slate-200 focus:ring-blue-500 focus:outline-none" />
               </div>
               <div>
-                <label class="block text-xs font-medium text-slate-500 mb-1">耗时 (分钟)</label>
+                <label class="block text-xs font-medium text-slate-500 mb-1">耗时</label>
                 <div class="w-full bg-slate-100 rounded-md px-3 py-2 text-sm text-slate-500 ring-1 ring-inset ring-slate-200 cursor-not-allowed">
-                  {{ autoTimeSpent > 0 ? autoTimeSpent + ' 分钟' : '自动计算...' }}
+                  {{ autoSpentText || '自动计算...' }}
                 </div>
-                <p class="text-[10px] text-slate-400 mt-1">耗时由完成时间减去任务时间自动计算得出</p>
+                <p class="text-[10px] text-slate-400 mt-1">耗时由完成时间减去开始时间自动计算得出；没有开始时间时改用任务时间</p>
               </div>
             </div>
             

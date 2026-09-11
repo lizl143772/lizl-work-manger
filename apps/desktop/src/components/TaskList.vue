@@ -1,15 +1,68 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onBeforeUnmount } from 'vue';
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
 import { useTaskStore } from '../stores/taskStore';
 import { useProjectStore } from '../stores/projectStore';
 import TaskItem from './TaskItem.vue';
-import { Inbox, RotateCcw } from 'lucide-vue-next';
+import { Inbox, RotateCcw, Search, ArrowDown, ArrowUp, X } from 'lucide-vue-next';
+import { TASK_SORT_OPTIONS } from '../types/task';
 
 const taskStore = useTaskStore();
 const projectStore = useProjectStore();
 
 const isCompletedView = computed(() => projectStore.currentViewId === 'completed');
 const isFilteredByTime = computed(() => taskStore.dateRange !== 'all');
+
+// ---------- 「已完成」视图的搜索与排序 ----------
+
+/** 输入框本地值，配合防抖避免每敲一个字就查一次库 */
+const keywordInput = ref(taskStore.completedKeyword);
+let searchTimer: number | null = null;
+
+function onKeywordInput(e: Event) {
+  keywordInput.value = (e.target as HTMLInputElement).value;
+  if (searchTimer) clearTimeout(searchTimer);
+  searchTimer = window.setTimeout(() => {
+    taskStore.setCompletedKeyword(keywordInput.value);
+  }, 250);
+}
+
+function clearKeyword() {
+  if (searchTimer) clearTimeout(searchTimer);
+  keywordInput.value = '';
+  taskStore.setCompletedKeyword('');
+}
+
+// 关键字被外部改动（例如重置）时同步回输入框
+watch(
+  () => taskStore.completedKeyword,
+  (v) => {
+    if (v !== keywordInput.value) keywordInput.value = v;
+  }
+);
+
+onBeforeUnmount(() => {
+  if (searchTimer) clearTimeout(searchTimer);
+});
+
+const sortDescLabel = computed(() => (taskStore.completedSortDesc ? '降序' : '升序'));
+
+const hasKeyword = computed(() => !!taskStore.completedKeyword.trim());
+
+const emptyTitle = computed(() => {
+  if (hasKeyword.value) return `没有匹配「${taskStore.completedKeyword.trim()}」的任务`;
+  if (isCompletedView.value) {
+    return isFilteredByTime.value ? `${taskStore.currentDateRangeLabel}没有已完成任务` : '还没有已完成的任务';
+  }
+  return isFilteredByTime.value ? `${taskStore.currentDateRangeLabel}没有任务` : '没有待办任务';
+});
+
+const emptyHint = computed(() =>
+  hasKeyword.value
+    ? '换个关键字试试，或清空搜索'
+    : isFilteredByTime.value
+      ? '可切换时间范围查看更早的任务'
+      : '享受片刻宁静，或添加新任务'
+);
 
 type StatusTab = 'all' | 'todo' | 'in_progress';
 const activeTab = ref<StatusTab>('all');
@@ -93,6 +146,62 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onGlobalPointerD
       </div>
     </div>
 
+    <!-- 已完成视图：关键词搜索 + 按时间排序 -->
+    <div v-else class="sticky top-0 z-10 px-6 pt-1 pb-3 mb-1 bg-gradient-to-b from-white via-white to-transparent">
+      <div class="flex items-center gap-3 flex-wrap">
+        <!-- 搜索 -->
+        <div class="relative flex items-center">
+          <Search class="w-3.5 h-3.5 text-slate-400 absolute left-2.5 pointer-events-none" />
+          <input
+            :value="keywordInput"
+            @input="onKeywordInput"
+            type="text"
+            placeholder="搜索已完成的任务…"
+            class="w-56 bg-slate-100 rounded-lg pl-8 pr-7 py-1.5 text-[13px] text-slate-700 placeholder:text-slate-400 outline-none focus:ring-2 focus:ring-blue-200"
+          />
+          <button
+            v-if="keywordInput"
+            @click="clearKeyword"
+            class="absolute right-2 text-slate-400 hover:text-slate-600 transition-colors"
+            title="清空"
+          >
+            <X class="w-3.5 h-3.5" />
+          </button>
+        </div>
+
+        <span class="text-[12px] text-slate-400 tabular-nums">{{ taskStore.tasks.length }} 项</span>
+
+        <div class="flex-1"></div>
+
+        <!-- 排序 -->
+        <div class="flex items-center gap-2">
+          <span class="text-[12px] text-slate-400">按</span>
+          <div class="flex items-center space-x-1 bg-slate-100 rounded-xl p-1 w-fit">
+            <button
+              v-for="opt in TASK_SORT_OPTIONS"
+              :key="opt.key"
+              @click="taskStore.setCompletedSortBy(opt.key)"
+              :class="['px-3 py-1 rounded-lg text-[13px] font-medium transition-all duration-200',
+                       taskStore.completedSortBy === opt.key
+                         ? 'bg-white text-slate-800 shadow-sm'
+                         : 'text-slate-500 hover:text-slate-700']"
+            >
+              {{ opt.label }}
+            </button>
+          </div>
+          <button
+            @click="taskStore.toggleCompletedSortDesc()"
+            :title="taskStore.completedSortDesc ? '当前降序，点击切换为升序' : '当前升序，点击切换为降序'"
+            class="flex items-center space-x-1 px-2.5 py-1.5 rounded-lg text-[12px] text-slate-500 bg-slate-100 hover:bg-slate-200/70 transition-colors"
+          >
+            <ArrowDown v-if="taskStore.completedSortDesc" class="w-3.5 h-3.5" />
+            <ArrowUp v-else class="w-3.5 h-3.5" />
+            <span>{{ sortDescLabel }}</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
     <!-- List -->
     <div v-if="taskStore.loading && taskStore.tasks.length === 0" class="flex justify-center py-20 text-slate-400">
       <div class="w-8 h-8 border-2 border-slate-200 border-t-blue-500 rounded-full animate-spin"></div>
@@ -108,14 +217,17 @@ onBeforeUnmount(() => document.removeEventListener('mousedown', onGlobalPointerD
       <div class="w-20 h-20 bg-slate-100 rounded-full flex items-center justify-center mb-6">
         <Inbox class="w-10 h-10 text-slate-300" />
       </div>
-      <p class="text-[15px] font-medium text-slate-500">
-        {{ isFilteredByTime ? `${taskStore.currentDateRangeLabel}没有任务` : '没有待办任务' }}
-      </p>
-      <p class="text-sm text-slate-400 mt-1">
-        {{ isFilteredByTime ? '可切换时间范围查看更早的任务' : '享受片刻宁静，或添加新任务' }}
-      </p>
+      <p class="text-[15px] font-medium text-slate-500">{{ emptyTitle }}</p>
+      <p class="text-sm text-slate-400 mt-1">{{ emptyHint }}</p>
       <button
-        v-if="isFilteredByTime"
+        v-if="hasKeyword"
+        @click="clearKeyword"
+        class="mt-5 px-4 py-1.5 text-[13px] font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-full transition-colors"
+      >
+        清空搜索
+      </button>
+      <button
+        v-else-if="isFilteredByTime"
         @click="taskStore.setDateRange('all')"
         class="mt-5 px-4 py-1.5 text-[13px] font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-full transition-colors"
       >

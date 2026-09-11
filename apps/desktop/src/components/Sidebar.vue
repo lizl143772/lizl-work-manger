@@ -1,39 +1,33 @@
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue';
+import { ref, computed, watch, nextTick } from 'vue';
 import { useProjectStore } from '../stores/projectStore';
 import { useTaskStore } from '../stores/taskStore';
 import { useUiStore } from '../stores/uiStore';
+import { useSettingsStore, type SidebarTab } from '../stores/settingsStore';
 import { Inbox, Briefcase, User, CheckCircle, Plus, Trash2, Hash, Book, Star, Home, Code, Coffee, ShoppingCart, Check, Pencil, CalendarDays, LayoutGrid, BarChart3, Settings } from 'lucide-vue-next';
 import type { Project } from '../types/task';
 
 const projectStore = useProjectStore();
 const taskStore = useTaskStore();
 const uiStore = useUiStore();
+const settingsStore = useSettingsStore();
 
 // 底部 Tab：常用（系统视图 + 项目）/ 菜单（其他功能入口）
-const SIDEBAR_TAB_KEY = 'workmanager.sidebarTab';
-type SidebarTab = 'common' | 'menu';
-
-const activeTab = ref<SidebarTab>(
-  localStorage.getItem(SIDEBAR_TAB_KEY) === 'menu' ? 'menu' : 'common'
-);
+const activeTab = computed(() => settingsStore.settings.sidebarTab);
 
 const sidebarTabs = [
   { id: 'common' as SidebarTab, label: '常用', icon: Star },
   { id: 'menu' as SidebarTab, label: '菜单', icon: LayoutGrid },
 ];
 
-const setTab = (tab: SidebarTab) => {
-  activeTab.value = tab;
-  localStorage.setItem(SIDEBAR_TAB_KEY, tab);
-};
+const setTab = (tab: SidebarTab) => settingsStore.patch({ sidebarTab: tab });
 
-/** 菜单页的功能项；未实现的先以禁用态占位 */
+/** 菜单页的功能项 */
 const menuItems = [
   { id: 'calendar', name: '日历', icon: CalendarDays, available: true },
-  { id: 'trash', name: '回收站', icon: Trash2, available: false },
-  { id: 'stats', name: '统计', icon: BarChart3, available: false },
-  { id: 'settings', name: '设置', icon: Settings, available: false },
+  { id: 'trash', name: '回收站', icon: Trash2, available: true },
+  { id: 'stats', name: '统计', icon: BarChart3, available: true },
+  { id: 'settings', name: '设置', icon: Settings, available: true },
 ];
 
 const selectMenuItem = (item: { id: string; name: string; available: boolean }) => {

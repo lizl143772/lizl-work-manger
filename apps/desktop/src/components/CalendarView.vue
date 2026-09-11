@@ -4,23 +4,33 @@ import { api } from '../lib/api';
 import { useTaskStore } from '../stores/taskStore';
 import { useProjectStore } from '../stores/projectStore';
 import { useUiStore } from '../stores/uiStore';
+import { useSettingsStore, type CalendarMetric } from '../stores/settingsStore';
 import { ChevronLeft, ChevronRight, Inbox, PanelRightClose, PanelRightOpen } from 'lucide-vue-next';
 import type { DailyActivity, Task, TaskStatus } from '../types/task';
 import { localDayBounds, toDateKey } from '../types/task';
+import { formatDurationFromMinutes, taskDurationText } from '../lib/duration';
 
 const taskStore = useTaskStore();
 const projectStore = useProjectStore();
 const uiStore = useUiStore();
+const settingsStore = useSettingsStore();
 
-/** 统计口径：当天完成 / 当天创建 */
-type Metric = 'completed' | 'created';
-const metric = ref<Metric>('completed');
+/** 统计口径：当天完成 / 当天创建（默认值持久化在设置里） */
+type Metric = CalendarMetric;
+const metric = computed({
+  get: () => settingsStore.settings.calendarMetric,
+  set: (v: Metric) => settingsStore.patch({ calendarMetric: v }),
+});
 const metricOptions: { id: Metric; label: string }[] = [
   { id: 'completed', label: '完成' },
   { id: 'created', label: '创建' },
 ];
 
-const weekdays = ['一', '二', '三', '四', '五', '六', '日'];
+const weekdays = computed(() =>
+  settingsStore.settings.weekStartsOn === 1
+    ? ['一', '二', '三', '四', '五', '六', '日']
+    : ['日', '一', '二', '三', '四', '五', '六']
+);
 
 /** 当前显示的月份（定位到当月 1 号） */
 const cursor = ref(new Date(new Date().getFullYear(), new Date().getMonth(), 1));
@@ -31,14 +41,15 @@ const monthTitle = computed(
 );
 
 /**
- * 月历网格：固定 6 行 × 7 列，周一为每周起始。
+ * 月历网格：固定 6 行 × 7 列，每周起始日跟随设置。
  * 固定行数是为了翻月时高度不跳动。
  */
 const grid = computed(() => {
   const y = cursor.value.getFullYear();
   const m = cursor.value.getMonth();
-  // JS 的 getDay() 里 0 = 周日，换算成「周一为 0」
-  const lead = (new Date(y, m, 1).getDay() + 6) % 7;
+  // JS 的 getDay() 里 0 = 周日；起始日为周一时换算成「周一为 0」
+  const offset = settingsStore.settings.weekStartsOn === 1 ? 6 : 0;
+  const lead = (new Date(y, m, 1).getDay() + offset) % 7;
   const cells: { key: string; day: number; inMonth: boolean }[] = [];
   for (let i = 0; i < 42; i++) {
     const d = new Date(y, m, i - lead + 1);
@@ -137,8 +148,12 @@ const LEVEL_BADGE = [
 ];
 const LEVEL_FILL = ['bg-blue-100', 'bg-blue-200', 'bg-blue-400', 'bg-blue-600'];
 
-/** 格子里最多铺几条任务摘要（完整条数由角标体现，悬停可看全部摘要） */
-const CELL_ITEM_LIMIT = 2;
+/**
+ * 格子里最多铺几条任务摘要。
+ * 实际显示条数受窗口高度限制（容器 overflow-hidden 会裁掉放不下的），
+ * 这里给足上限，完整条数由右上角角标体现、悬停可看全部。
+ */
+const CELL_ITEM_LIMIT = 10;
 
 const todayKey = toDateKey(new Date());
 
@@ -174,19 +189,14 @@ const selectedLabel = computed(() => {
   return `${m} 月 ${d} 日 · ${wd}`;
 });
 
-const formatMinutes = (min: number) => {
-  if (!min) return '';
-  if (min < 60) return `${min} 分钟`;
-  const h = Math.floor(min / 60);
-  const m = min % 60;
-  return m ? `${h} 小时 ${m} 分钟` : `${h} 小时`;
-};
+const formatMinutes = formatDurationFromMinutes;
 
 const daySummary = computed(() => {
   if (metric.value === 'created') return `创建 ${dayTasks.value.length} 项`;
   const minutes = dayTasks.value.reduce((sum, t) => sum + (t.time_spent || 0), 0);
   const base = `完成 ${dayTasks.value.length} 项`;
-  return minutes > 0 ? `${base} · 累计 ${formatMinutes(minutes)}` : base;
+  const total = formatMinutes(minutes);
+  return total ? `${base} · 累计 ${total}` : base;
 });
 
 const projectOf = (task: Task) => projectStore.projects.find(p => p.id === task.project_id);
@@ -194,15 +204,16 @@ const projectOf = (task: Task) => projectStore.projects.find(p => p.id === task.
 // ---------- 交互 ----------
 
 /**
- * 右侧明细面板可折叠。
+ * 右侧明细面板可折叠（默认展开状态持久化在设置里）。
  * 日历格子宽度很有限（7 列挤在几百像素里），收起面板能明显多显示几个字，
- * 所以把选择权交给用户，状态记在 localStorage。
+ * 所以把选择权交给用户。
  */
-const DETAIL_PANEL_KEY = 'workmanager.calendarDetailOpen';
-const detailOpen = ref(localStorage.getItem(DETAIL_PANEL_KEY) !== '0');
+const detailOpen = computed({
+  get: () => settingsStore.settings.calendarDetailOpen,
+  set: (v: boolean) => settingsStore.patch({ calendarDetailOpen: v }),
+});
 const toggleDetail = () => {
   detailOpen.value = !detailOpen.value;
-  localStorage.setItem(DETAIL_PANEL_KEY, detailOpen.value ? '1' : '0');
 };
 
 const selectDate = (cell: { key: string; inMonth: boolean }) => {
@@ -323,7 +334,7 @@ const openTask = async (task: Task) => {
               >{{ metricCount(cell.key) }}</span>
             </div>
 
-            <div class="flex-1 min-h-0 mt-1 space-y-[2px] overflow-hidden">
+            <div class="flex-1 min-h-0 mt-0.5 space-y-px overflow-hidden">
               <div
                 v-for="(it, i) in itemsOf(cell.key)"
                 :key="i"
@@ -385,7 +396,7 @@ const openTask = async (task: Task) => {
                   :class="t.status === 'completed' ? 'text-slate-400 line-through' : 'text-slate-700'"
                 >{{ t.title }}</span>
                 <span class="block text-[11px] text-slate-400 mt-0.5">
-                  {{ projectOf(t)?.name || '未分类' }}<template v-if="t.time_spent"> · {{ formatMinutes(t.time_spent) }}</template>
+                  {{ projectOf(t)?.name || '未分类' }}<template v-if="taskDurationText(t)"> · {{ taskDurationText(t) }}</template>
                 </span>
               </span>
             </button>

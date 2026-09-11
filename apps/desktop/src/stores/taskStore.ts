@@ -1,16 +1,10 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import { api } from '../lib/api';
-import type { Task, TaskStatus, DateRangeKey } from '../types/task';
-import { DATE_RANGE_OPTIONS, DEFAULT_DATE_RANGE, dateRangeToFrom } from '../types/task';
+import type { Task, TaskStatus, DateRangeKey, TaskSortKey } from '../types/task';
+import { DATE_RANGE_OPTIONS, DEFAULT_TASK_SORT, dateRangeToFrom } from '../types/task';
 import { useProjectStore } from './projectStore';
-
-const DATE_RANGE_STORAGE_KEY = 'workmanager.dateRange';
-
-function readStoredDateRange(): DateRangeKey {
-  const raw = localStorage.getItem(DATE_RANGE_STORAGE_KEY) as DateRangeKey | null;
-  return raw && DATE_RANGE_OPTIONS.some(o => o.key === raw) ? raw : DEFAULT_DATE_RANGE;
-}
+import { useSettingsStore } from './settingsStore';
 
 export const useTaskStore = defineStore('task', () => {
   const tasks = ref<Task[]>([]);
@@ -19,10 +13,17 @@ export const useTaskStore = defineStore('task', () => {
   const undoTimeout = ref<number | null>(null);
   const lastDeletedTask = ref<Task | null>(null);
   const expandedTaskId = ref<string | null>(null);
-  // 时间范围筛选，默认近半年
-  const dateRange = ref<DateRangeKey>(readStoredDateRange());
 
   const projectStore = useProjectStore();
+  const settingsStore = useSettingsStore();
+
+  /** 时间范围筛选改为由 settingsStore 统一持久化，这里只做只读投影 */
+  const dateRange = computed(() => settingsStore.settings.dateRange);
+
+  // 「已完成」视图的搜索与排序（仅会话内保留，不落盘）
+  const completedKeyword = ref('');
+  const completedSortBy = ref<TaskSortKey>(DEFAULT_TASK_SORT);
+  const completedSortDesc = ref(true);
 
   /** 当前时间范围的展示文案 */
   const currentDateRangeLabel = computed(
@@ -45,8 +46,8 @@ export const useTaskStore = defineStore('task', () => {
   }
 
   async function loadTasks() {
-    // 日历视图不渲染任务列表，数据由 CalendarView 按天自行取
-    if (projectStore.isCalendarView) {
+    // 日历 / 回收站 / 统计 / 设置这些视图不渲染任务列表，数据由各自组件取
+    if (!projectStore.isTaskListView) {
       tasks.value = [];
       error.value = null;
       loading.value = false;
@@ -61,6 +62,10 @@ export const useTaskStore = defineStore('task', () => {
         project_id: isInboxView ? undefined : projectStore.currentViewActualId,
         statuses: isCompletedView ? ['completed' as TaskStatus] : ['todo' as TaskStatus, 'in_progress' as TaskStatus],
         created_from: dateRangeToFrom(dateRange.value),
+        // 「已完成」视图支持关键字搜索与按时间排序，其余视图走默认排序
+        keyword: isCompletedView ? completedKeyword.value.trim() || undefined : undefined,
+        sort_by: isCompletedView ? completedSortBy.value : undefined,
+        sort_desc: isCompletedView ? completedSortDesc.value : undefined,
         page: 1,
         page_size: 100
       };
@@ -73,11 +78,30 @@ export const useTaskStore = defineStore('task', () => {
     }
   }
 
+  /** 设置「已完成」视图的搜索关键字 */
+  async function setCompletedKeyword(kw: string) {
+    if (completedKeyword.value === kw) return;
+    completedKeyword.value = kw;
+    await loadTasks();
+  }
+
+  /** 设置「已完成」视图的排序字段 */
+  async function setCompletedSortBy(key: TaskSortKey) {
+    if (completedSortBy.value === key) return;
+    completedSortBy.value = key;
+    await loadTasks();
+  }
+
+  /** 切换「已完成」视图的排序方向 */
+  async function toggleCompletedSortDesc() {
+    completedSortDesc.value = !completedSortDesc.value;
+    await loadTasks();
+  }
+
   /** 设置时间范围并重新加载任务 */
   async function setDateRange(key: DateRangeKey) {
-    if (dateRange.value === key) return;
-    dateRange.value = key;
-    localStorage.setItem(DATE_RANGE_STORAGE_KEY, key);
+    if (settingsStore.settings.dateRange === key) return;
+    settingsStore.patch({ dateRange: key });
     await loadTasks();
   }
 
@@ -183,6 +207,12 @@ export const useTaskStore = defineStore('task', () => {
     dateRange,
     currentDateRangeLabel,
     setDateRange,
+    completedKeyword,
+    completedSortBy,
+    completedSortDesc,
+    setCompletedKeyword,
+    setCompletedSortBy,
+    toggleCompletedSortDesc,
     loadTasks,
     quickAdd,
     updateStatus,

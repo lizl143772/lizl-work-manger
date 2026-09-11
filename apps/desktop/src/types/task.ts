@@ -9,6 +9,8 @@ export interface Task {
   priority: number; // 0, 1, 2, 3
   due_date: string | null;
   completed_at: string | null;
+  /** 实际开始时间：任务首次进入「进行中」时自动打点，用于计算真实耗时 */
+  started_at: string | null;
   deleted_at: string | null;
   attachments: string | null;
   time_spent: number | null;
@@ -23,6 +25,8 @@ export interface TaskUpdateInput {
   attachments?: string | null;
   due_date?: string | null;
   completed_at?: string | null;
+  /** 允许手动修正实际开始时间 */
+  started_at?: string | null;
   time_spent?: number | null;
 }
 
@@ -69,9 +73,26 @@ export interface TaskQuery {
   completed_from?: string;
   /** 完成时间上界（ISO 8601，含） */
   completed_to?: string;
+  /** 标题关键字（模糊匹配） */
+  keyword?: string;
+  /** 排序字段（后端白名单：completed_at / started_at / created_at / due_date） */
+  sort_by?: TaskSortKey;
+  /** 排序方向，默认降序 */
+  sort_desc?: boolean;
   page?: number;
   page_size?: number;
 }
+
+/** 「已完成」列表可选的排序字段 */
+export type TaskSortKey = 'completed_at' | 'started_at' | 'created_at';
+
+export const TASK_SORT_OPTIONS: { key: TaskSortKey; label: string }[] = [
+  { key: 'completed_at', label: '完成时间' },
+  { key: 'started_at', label: '开始时间' },
+  { key: 'created_at', label: '录入时间' },
+];
+
+export const DEFAULT_TASK_SORT: TaskSortKey = 'completed_at';
 
 /** 日历格内缩略展示用的一条任务摘要（不含正文与附件） */
 export interface ActivityItem {
@@ -178,4 +199,33 @@ export interface UpdateProjectInput {
   color?: string;
   icon?: string;
   sort_order?: number;
+}
+
+/** 统计页的一个分组桶（按项目 / 按优先级） */
+export interface BreakdownBucket {
+  /** 分组键：项目 id 或优先级数值 */
+  key: string;
+  /** 展示名：项目名、优先级中文名 */
+  label: string;
+  /** 项目色；优先级分组为 null，由前端按档位上色 */
+  color: string | null;
+  count: number;
+}
+
+/** 统计页概览：只含「当前存量」的聚合 */
+export interface TaskStats {
+  todo: number;
+  in_progress: number;
+  completed: number;
+  /** 未完成任务按项目分布，数量降序 */
+  by_project: BreakdownBucket[];
+  /** 未完成任务按优先级分布，优先级降序 */
+  by_priority: BreakdownBucket[];
+}
+
+/** 应用信息（设置页展示） */
+export interface AppInfo {
+  db_path: string;
+  version: string;
+  schema_version: number;
 }
