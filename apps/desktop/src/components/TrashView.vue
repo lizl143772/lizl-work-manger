@@ -26,7 +26,7 @@ const STATUS_LABEL: Record<string, string> = {
 async function load() {
   loading.value = true;
   try {
-    const res = await api.listDeletedTasks(keyword.value.trim() || null, 1, 200);
+    const res = await api.listDeletedTasks(keyword.value.trim() || null);
     tasks.value = res.items;
     total.value = res.total;
     // 丢弃已经不在列表里的选中项，避免批量操作打到不存在的记录
@@ -164,7 +164,11 @@ async function purgeSelected() {
     }
   }
   selected.value = new Set();
-  uiStore.showMessage(`已彻底删除 ${done} 条任务`, 'info');
+  // 与 restoreSelected 对齐：部分失败要如实提示，不能一律报成功
+  uiStore.showMessage(
+    done === ids.length ? `已彻底删除 ${done} 条任务` : `已彻底删除 ${done} 条，${ids.length - done} 条失败`,
+    done === ids.length ? 'info' : 'error'
+  );
   await load();
 }
 

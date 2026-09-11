@@ -2,15 +2,18 @@
 import { ref, computed, onMounted } from 'vue';
 import { api } from '../lib/api';
 import { useUiStore } from '../stores/uiStore';
+import { useSettingsStore } from '../stores/settingsStore';
 import { BarChart3, Flame } from 'lucide-vue-next';
 import type { DailyActivity, TaskStats } from '../types/task';
 import { toDateKey } from '../types/task';
 import { formatDurationFromMinutes } from '../lib/duration';
 
 const uiStore = useUiStore();
+const settingsStore = useSettingsStore();
 
+// 初始口径跟随设置页的「日历默认统计口径」（日历与趋势图共用），页内仍可临时切换
 type Metric = 'completed' | 'created';
-const metric = ref<Metric>('completed');
+const metric = ref<Metric>(settingsStore.settings.calendarMetric);
 
 const stats = ref<TaskStats | null>(null);
 const activity = ref<DailyActivity[]>([]);
@@ -170,7 +173,7 @@ const priorityTotal = computed(() =>
         <div class="bg-slate-100 rounded-xl px-4 py-3">
           <p class="text-[11px] text-slate-500">近 {{ days }} 天耗时</p>
           <p class="text-[22px] leading-tight text-slate-800 tabular-nums mt-1">{{ formatAggregate(windowMinutes) }}</p>
-          <p class="text-[11px] text-slate-400 mt-0.5">按任务时间与完成时间计算</p>
+          <p class="text-[11px] text-slate-400 mt-0.5">开始时间优先，缺省用任务时间</p>
         </div>
         <div class="bg-slate-100 rounded-xl px-4 py-3">
           <p class="text-[11px] text-slate-500">平均每项耗时</p>

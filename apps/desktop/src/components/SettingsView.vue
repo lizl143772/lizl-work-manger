@@ -67,6 +67,9 @@ async function resetSettings() {
   const ok = await uiStore.confirm('恢复默认设置？', '所有偏好将回到初始状态，任务数据不受影响。');
   if (!ok) return;
   settingsStore.reset();
+  // 置顶的运行时状态在 uiStore 里，不走 togglePin 同步的话，
+  // 存储值已回 false、窗口却仍保持置顶，重启前设置页开关会一直显示错误状态
+  if (uiStore.isPinned) await uiStore.togglePin();
   uiStore.showMessage('已恢复默认设置', 'success');
 }
 </script>

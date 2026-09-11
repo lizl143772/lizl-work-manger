@@ -38,6 +38,20 @@ fn compute_time_spent(origin: Option<&str>, completed_at: chrono::DateTime<Utc>)
     Some(((seconds as f64) / 60.0).round().max(0.0) as i32)
 }
 
+/// 标题关键字过滤：trim 后为空则不加条件。`list_tasks` 与回收站列表共用，
+/// 避免两套 LIKE 拼接各自漂移。
+fn push_keyword_filter(sql: &mut String, count_sql: &mut String, keyword: Option<String>) {
+    if let Some(kw) = keyword {
+        let kw = kw.trim();
+        if !kw.is_empty() {
+            let like = format!("%{}%", kw.replace('\'', "''"));
+            let cond = format!(" AND title LIKE '{}'", like);
+            sql.push_str(&cond);
+            count_sql.push_str(&cond);
+        }
+    }
+}
+
 pub struct Database {
     conn: Connection,
 }
@@ -322,15 +336,15 @@ impl Database {
         if title.is_empty() || title.len() > 500 {
             return Err(TodoError::ValidationError("Title must be 1-500 characters".into()));
         }
-        
-        let description = if input.description.is_some() { input.description } else { task.description };
-        let attachments = if input.attachments.is_some() { input.attachments } else { task.attachments };
-        let due_date = if input.due_date.is_some() { input.due_date } else { task.due_date };
-        let completed_at = if input.completed_at.is_some() { input.completed_at } else { task.completed_at };
-        let started_at = if input.started_at.is_some() { input.started_at } else { task.started_at };
-        let time_spent = if input.time_spent.is_some() { input.time_spent } else { task.time_spent };
 
-        println!("SQL Params: attachments is some? {}, len: {}", attachments.is_some(), attachments.as_ref().map(|s| s.len()).unwrap_or(0));
+        // 外层 Some = 前端显式传了值（Some(None) 即传了 null，表示清空）；
+        // 外层 None = 键没传，保留旧值。
+        let description = match input.description { Some(v) => v, None => task.description };
+        let attachments = match input.attachments { Some(v) => v, None => task.attachments };
+        let due_date = match input.due_date { Some(v) => v, None => task.due_date };
+        let completed_at = match input.completed_at { Some(v) => v, None => task.completed_at };
+        let started_at = match input.started_at { Some(v) => v, None => task.started_at };
+        let time_spent = match input.time_spent { Some(v) => v, None => task.time_spent };
 
         self.conn.execute(
             "UPDATE tasks SET title = ?1, description = ?2, attachments = ?3, due_date = ?4, completed_at = ?5, started_at = ?6, time_spent = ?7, updated_at = ?8 WHERE id = ?9",
@@ -414,16 +428,8 @@ impl Database {
             }
         }
 
-        // 标题关键字过滤（回收站列表用的是另一套方法，注意保持一致）
-        if let Some(kw) = query.keyword {
-            let kw = kw.trim().to_string();
-            if !kw.is_empty() {
-                let like = format!("%{}%", kw.replace('\'', "''"));
-                let cond = format!(" AND title LIKE '{}'", like);
-                sql.push_str(&cond);
-                count_sql.push_str(&cond);
-            }
-        }
+        // 标题关键字过滤（与回收站列表共用同一实现）
+        push_keyword_filter(&mut sql, &mut count_sql, query.keyword);
 
         // 排序：指定了时间字段就按它排，否则用默认排序（未完成优先 + 优先级 + 录入时间）。
         // 列名走白名单，绝不拼接原始输入。
@@ -587,6 +593,9 @@ impl Database {
     ///
     /// 刻意把 `attachments` 取成 NULL —— 附件是粘贴图片的 base64，单条可能几百 KB，
     /// 回收站列表不展示图片，没必要把它拖出来。
+    ///
+    /// `page_size` 传 0 表示不分页、全量返回（回收站行很轻，前端全选/计数都以
+    /// 可见列表为准，截断会让「共 N 条」与实际操作范围对不上）。
     pub fn list_deleted_tasks(
         &self,
         keyword: Option<String>,
@@ -596,22 +605,16 @@ impl Database {
         let mut sql = format!("SELECT {} FROM tasks WHERE deleted_at IS NOT NULL", TASK_COLUMNS_WITHOUT_ATTACHMENTS);
         let mut count_sql = "SELECT COUNT(*) FROM tasks WHERE deleted_at IS NOT NULL".to_string();
 
-        if let Some(kw) = keyword {
-            let kw = kw.trim();
-            if !kw.is_empty() {
-                let like = format!("%{}%", kw.replace('\'', "''"));
-                let cond = format!(" AND title LIKE '{}'", like);
-                sql.push_str(&cond);
-                count_sql.push_str(&cond);
-            }
-        }
+        push_keyword_filter(&mut sql, &mut count_sql, keyword);
 
         sql.push_str(" ORDER BY deleted_at DESC");
 
-        let page = page.max(1);
-        let page_size = page_size.clamp(1, 200);
-        let offset = (page - 1) * page_size;
-        sql.push_str(&format!(" LIMIT {} OFFSET {}", page_size, offset));
+        if page_size > 0 {
+            let page = page.max(1);
+            let page_size = page_size.clamp(1, 200);
+            let offset = (page - 1) * page_size;
+            sql.push_str(&format!(" LIMIT {} OFFSET {}", page_size, offset));
+        }
 
         let total: u64 = self.conn.query_row(&count_sql, [], |row| row.get(0))?;
 
@@ -923,7 +926,7 @@ mod tests {
                 title: None,
                 description: None,
                 attachments: None,
-                due_date: Some(due.to_rfc3339()),
+                due_date: Some(Some(due.to_rfc3339())),
                 completed_at: None,
                 started_at: None,
                 time_spent: None,
@@ -974,12 +977,59 @@ mod tests {
                     attachments: None,
                     due_date: None,
                     completed_at: None,
-                    started_at: Some(manual.clone()),
+                    started_at: Some(Some(manual.clone())),
                     time_spent: None,
                 },
             )
             .expect("correct started_at");
         assert_eq!(updated.started_at.as_deref(), Some(manual.as_str()));
+
+        drop(db);
+        cleanup(&path);
+    }
+
+    /// 显式传 null（Some(None)）应清空字段；键不传（None）应保留旧值。
+    /// 前端清空时间输入框时发的就是 null，若把 null 当成「不修改」，
+    /// 任务时间/开始时间/完成时间一旦设上就永远清不掉。
+    #[test]
+    fn update_task_details_null_clears_and_missing_key_keeps() {
+        let (db, path) = temp_db("null_clears");
+        let task = db
+            .create_task(CreateTaskInput {
+                title: "清空语义".into(),
+                project_id: None,
+                description: None,
+                priority: None,
+            })
+            .expect("create task");
+
+        let stamp = "2026-09-11T01:00:00+00:00";
+        db.update_task_details(
+            &task.id,
+            TaskUpdateInput {
+                due_date: Some(Some(stamp.into())),
+                started_at: Some(Some(stamp.into())),
+                time_spent: Some(Some(30)),
+                ..Default::default()
+            },
+        )
+        .expect("fill fields");
+
+        // 清空 due_date / started_at，同时不传 time_spent —— 后者必须原样保留
+        let cleared = db
+            .update_task_details(
+                &task.id,
+                TaskUpdateInput {
+                    due_date: Some(None),
+                    started_at: Some(None),
+                    ..Default::default()
+                },
+            )
+            .expect("clear fields");
+
+        assert_eq!(cleared.due_date, None, "显式 null 应清空任务时间");
+        assert_eq!(cleared.started_at, None, "显式 null 应清空开始时间");
+        assert_eq!(cleared.time_spent, Some(30), "没传的字段应保留旧值");
 
         drop(db);
         cleanup(&path);
@@ -1007,7 +1057,7 @@ mod tests {
                 due_date: None,
                 completed_at: None,
                 started_at: None,
-                time_spent: Some(42),
+                time_spent: Some(Some(42)),
             },
         )
         .expect("set time spent");
@@ -1043,12 +1093,12 @@ mod tests {
             &task.id,
             TaskUpdateInput {
                 title: Some("列顺序校验".into()),
-                description: Some("正文".into()),
+                description: Some(Some("正文".into())),
                 attachments: None,
-                due_date: Some("2026-09-11T01:00:00+00:00".into()),
-                completed_at: Some("2026-09-11T02:00:00+00:00".into()),
-                started_at: Some("2026-09-11T01:30:00+00:00".into()),
-                time_spent: Some(30),
+                due_date: Some(Some("2026-09-11T01:00:00+00:00".into())),
+                completed_at: Some(Some("2026-09-11T02:00:00+00:00".into())),
+                started_at: Some(Some("2026-09-11T01:30:00+00:00".into())),
+                time_spent: Some(Some(30)),
             },
         )
         .expect("fill all fields");
@@ -1119,9 +1169,9 @@ mod tests {
             db.update_task_details(
                 &task.id,
                 TaskUpdateInput {
-                    started_at: Some((done - Duration::minutes(30)).to_rfc3339()),
-                    completed_at: Some(done.to_rfc3339()),
-                    time_spent: Some(30),
+                    started_at: Some(Some((done - Duration::minutes(30)).to_rfc3339())),
+                    completed_at: Some(Some(done.to_rfc3339())),
+                    time_spent: Some(Some(30)),
                     ..Default::default()
                 },
             )

@@ -16,8 +16,8 @@ export const api = {
   // Calendar —— 取 from~to（本地日期 YYYY-MM-DD，闭区间）内每天的活跃度汇总
   getDailyActivity: (from: string, to: string) => invoke<DailyActivity[]>('get_daily_activity', { from, to }),
 
-  // Trash —— 回收站（仅含已软删除的任务）
-  listDeletedTasks: (keyword: string | null = null, page = 1, pageSize = 200) =>
+  // Trash —— 回收站（仅含已软删除的任务）；pageSize 传 0 表示全量返回
+  listDeletedTasks: (keyword: string | null = null, page = 1, pageSize = 0) =>
     invoke<TaskPage>('list_deleted_tasks', { keyword, page, pageSize }),
   purgeTask: (taskId: string) => invoke<void>('purge_task', { taskId }),
   purgeDeletedTasks: () => invoke<number>('purge_deleted_tasks'),

@@ -119,11 +119,14 @@ export interface DailyActivity {
 /**
  * 把本地日期（YYYY-MM-DD）换算成一对可直接做字典序比较的 RFC3339 边界。
  *
- * 后端 `completed_at` / `created_at` 存的是 UTC，且 chrono 的 `to_rfc3339()`
- * 仅在纳秒非零时才带小数部分，所以边界要分别处理：
- * - 下界用不带小数的秒级格式 —— 小数点的字符编码大于加号，因此
- *   当天零点整点完成的任务不会被漏掉；
- * - 上界补到纳秒满位 —— 保证当天 23:59:59 之后的任意精度都落在区间内。
+ * 库中时间戳有两种写法：Rust 侧 chrono 的 `to_rfc3339()`（`+00:00` 结尾，
+ * 纳秒非零时带最多 9 位小数），前端回写的 `toISOString()`（`Z` 结尾，恒带
+ * 3 位毫秒）。字符串比较要保证两种写法都落在区间内：
+ * - 下界用不带小数的秒级格式 —— 小数点（0x2E）的编码大于加号（0x2B），
+ *   因此当天零点整点完成的任务不会被漏掉；
+ * - 上界用「秒 + `.999Z`」—— 它是当天最后一秒所有写法的字典序上界：
+ *   毫秒写法 `…59.999Z` 与它相等，纳秒写法 `…59.999999999+00:00` 因
+ *   `'9' < 'Z'` 排在它前面，秒级写法因 `'+' < '.'` 也排在它前面。
  */
 export function localDayBounds(dateKey: string): { from: string; to: string } {
   const [y, m, d] = dateKey.split('-').map(Number);
@@ -131,7 +134,7 @@ export function localDayBounds(dateKey: string): { from: string; to: string } {
   const end = new Date(y, m - 1, d, 23, 59, 59);
   return {
     from: start.toISOString().slice(0, 19) + '+00:00',
-    to: end.toISOString().slice(0, 19) + '.999999999+00:00',
+    to: end.toISOString().slice(0, 19) + '.999Z',
   };
 }
 

@@ -50,16 +50,34 @@ pub struct Task {
     pub updated_at: String,
 }
 
+/// 区分「键没传」与「显式传了 null」：serde 默认会把两者都收成 `None`，
+/// 导致前端清空字段（传 null）被当成「不修改」。这个反序列化器只在键存在时
+/// 被调用（键缺失走 `default` 得到外层 `None`），所以返回的总是 `Some(...)`，
+/// 内层再按 JSON 值是 null 还是具体值得到 `None`（清空）/ `Some(v)`（写入）。
+fn de_nullable<'de, D, T>(deserializer: D) -> std::result::Result<Option<Option<T>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    Ok(Some(Option::<T>::deserialize(deserializer)?))
+}
+
 #[derive(serde::Deserialize, Default)]
 pub struct TaskUpdateInput {
     pub title: Option<String>,
-    pub description: Option<String>,
-    pub attachments: Option<String>,
-    pub due_date: Option<String>,
-    pub completed_at: Option<String>,
+    #[serde(default, deserialize_with = "de_nullable")]
+    pub description: Option<Option<String>>,
+    #[serde(default, deserialize_with = "de_nullable")]
+    pub attachments: Option<Option<String>>,
+    #[serde(default, deserialize_with = "de_nullable")]
+    pub due_date: Option<Option<String>>,
+    #[serde(default, deserialize_with = "de_nullable")]
+    pub completed_at: Option<Option<String>>,
     /// 允许手动修正实际开始时间
-    pub started_at: Option<String>,
-    pub time_spent: Option<i32>,
+    #[serde(default, deserialize_with = "de_nullable")]
+    pub started_at: Option<Option<String>>,
+    #[serde(default, deserialize_with = "de_nullable")]
+    pub time_spent: Option<Option<i32>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
