@@ -384,7 +384,7 @@ const cardBorderClass = computed(() => {
 });
 
 const taskProject = computed(() => projectStore.projects.find(p => p.id === props.task.project_id));
-const showProjectBadge = computed(() => projectStore.currentViewId === 'inbox' && !!taskProject.value);
+const showProjectBadge = computed(() => (projectStore.currentViewId === 'inbox' || projectStore.currentViewId === 'completed') && !!taskProject.value);
 
 const changePriority = () => {
   const next = (props.task.priority + 1) % 4;
@@ -511,7 +511,7 @@ const deleteFromMenu = () => {
         <span v-else 
           :class="[
             'text-[15px] font-medium block transition-colors duration-200', 
-            task.status === 'completed' ? 'text-slate-400 line-through' : 'text-slate-800'
+            task.status === 'completed' ? 'text-slate-400' : 'text-slate-800'
           ]"
         >
           {{ task.title }}

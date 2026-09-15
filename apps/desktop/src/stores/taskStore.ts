@@ -58,9 +58,16 @@ export const useTaskStore = defineStore('task', () => {
     try {
       const isCompletedView = projectStore.currentViewId === 'completed';
       const isInboxView = projectStore.currentViewId === 'inbox';
+      // 项目视图展示全部状态（含已完成），待办列表只展示未完成
+      const isProjectView = !isInboxView && !isCompletedView;
+      const statuses: TaskStatus[] = isCompletedView
+        ? ['completed']
+        : isProjectView
+          ? ['todo', 'in_progress', 'completed']
+          : ['todo', 'in_progress'];
       const query = {
         project_id: isInboxView ? undefined : projectStore.currentViewActualId,
-        statuses: isCompletedView ? ['completed' as TaskStatus] : ['todo' as TaskStatus, 'in_progress' as TaskStatus],
+        statuses,
         created_from: dateRangeToFrom(dateRange.value),
         // 「已完成」视图支持关键字搜索与按时间排序，其余视图走默认排序
         keyword: isCompletedView ? completedKeyword.value.trim() || undefined : undefined,

@@ -64,21 +64,40 @@ const emptyHint = computed(() =>
       : '享受片刻宁静，或添加新任务'
 );
 
-type StatusTab = 'all' | 'todo' | 'in_progress';
+type StatusTab = 'all' | 'todo' | 'in_progress' | 'completed';
 const activeTab = ref<StatusTab>('all');
+
+/** 是否是具体项目视图（既不是 inbox 也不是全局已完成） */
+const isProjectView = computed(() => !isCompletedView.value && projectStore.currentViewId !== 'inbox');
+
+// 切换视图时，若当前 tab 在新视图中不存在则回退到 '全部'
+watch(() => projectStore.currentViewId, () => {
+  if (activeTab.value === 'completed' && !isProjectView.value) {
+    activeTab.value = 'all';
+  }
+});
 
 const todoCount = computed(() => taskStore.tasks.filter(t => t.status === 'todo').length);
 const inProgressCount = computed(() => taskStore.tasks.filter(t => t.status === 'in_progress').length);
+const completedCount = computed(() => taskStore.tasks.filter(t => t.status === 'completed').length);
 
-const tabs = computed(() => [
-  { id: 'all' as StatusTab, label: '全部', count: taskStore.tasks.length },
-  { id: 'todo' as StatusTab, label: '未开始', count: todoCount.value },
-  { id: 'in_progress' as StatusTab, label: '进行中', count: inProgressCount.value },
-]);
+const tabs = computed(() => {
+  const base = [
+    { id: 'all' as StatusTab, label: '全部', count: taskStore.tasks.length },
+    { id: 'todo' as StatusTab, label: '未开始', count: todoCount.value },
+    { id: 'in_progress' as StatusTab, label: '进行中', count: inProgressCount.value },
+  ];
+  // 项目视图含已完成任务，增加已完成 tab
+  if (isProjectView.value) {
+    base.push({ id: 'completed' as StatusTab, label: '已完成', count: completedCount.value });
+  }
+  return base;
+});
 
 const filteredTasks = computed(() => {
   if (activeTab.value === 'todo') return taskStore.tasks.filter(t => t.status === 'todo');
   if (activeTab.value === 'in_progress') return taskStore.tasks.filter(t => t.status === 'in_progress');
+  if (activeTab.value === 'completed') return taskStore.tasks.filter(t => t.status === 'completed');
   return taskStore.tasks;
 });
 

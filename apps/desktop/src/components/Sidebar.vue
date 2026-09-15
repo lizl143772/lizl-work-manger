@@ -200,7 +200,7 @@ const confirmDelete = async (id: string) => {
         </div>
         
         <div class="space-y-1">
-          <div v-for="proj in projectStore.activeProjects.filter(p => !p.is_default)" :key="proj.id" class="group/item flex items-center relative" @contextmenu.prevent="onProjectContextMenu($event, proj)">
+          <div v-for="proj in projectStore.activeProjects" :key="proj.id" class="group/item flex items-center relative" @contextmenu.prevent="!proj.is_default && onProjectContextMenu($event, proj)">
             <button 
               @click="selectProject(proj.id)"
               :class="['flex-1 flex items-center px-3 py-2 rounded-xl text-[14px] transition-all duration-200', 
@@ -209,7 +209,7 @@ const confirmDelete = async (id: string) => {
                          : 'text-slate-600 hover:bg-slate-200/50 hover:text-slate-900']"
             >
               <component :is="getIcon(proj.icon)" class="w-4 h-4 mr-3" :style="{ color: proj.color }" />
-              <span class="flex-1 text-left truncate">{{ proj.name }}</span>
+              <span class="flex-1 text-left truncate">{{ proj.is_default ? '收件箱' : proj.name }}</span>
               
               <span v-if="projectStore.counts.projects[proj.id] > 0" 
                     :class="['text-xs font-medium px-2 py-0.5 rounded-full transition-colors', 
@@ -219,6 +219,7 @@ const confirmDelete = async (id: string) => {
             </button>
             
             <button 
+              v-if="!proj.is_default"
               @click="confirmDelete(proj.id)" 
               class="absolute right-2 opacity-0 group-hover/item:opacity-100 p-1.5 text-slate-400 hover:text-rose-500 hover:bg-rose-50 transition-all rounded-lg"
               title="删除项目"
